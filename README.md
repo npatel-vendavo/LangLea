@@ -1,0 +1,122 @@
+# Learning Agent
+
+An AI-powered learning module generator that acts as a learning agent. Tell it what you want to learn and it researches the subject into a complete, structured learning module — main topics, subtopics, concrete learning items, and per-item study notes — then saves it so you can come back to it anytime.
+
+## Features Implemented
+
+### Learning-agent generation pipeline
+- Ask the user what they want to learn (any subject).
+- The backend asks the AI (any OpenAI-compatible endpoint) for the main topics (6-10), streamed live.
+- It then iterates through each main topic and asks the AI for its subtopics and concrete learning items, building the module tree in real time.
+- Each learning item can be expanded into a deep-dive **study note** (summary, key points, practice exercise, resources). Study notes can be generated per item or for all items at once.
+
+### Fault tolerance and resumability
+- Generation runs as a **background job** with an id; progress is streamed to the client via SSE and the job state is persisted to disk (temp dir), so a dropped connection or a server restart does not lose the build.
+- **Retries with exponential backoff** on every AI call for transient failures (429 / 5xx / rate-limit messages such as `ResourceExhausted`), honoring the `Retry-After` header.
+- **Round-based recovery**: sections that still fail are retried in up to 4 rounds with a 3s cooldown between rounds, so a rate-limit spike no longer aborts the whole module.
+- **Client auto-reconnect**: the UI reconnects to the job stream with exponential backoff and re-renders from a snapshot; the build continues in the background.
+- **Retry failed sections**: sections that exhaust retries are flagged with warnings and can be retried individually via a resume endpoint once the endpoint frees up.
+
+### Three-panel workspace
+- **Left panel (collapsible)** — topics tree: main topics -> subtopics -> learning items, each expandable/collapsible. Click an item to select it.
+- **Center panel** — content for the selected item: breadcrumb and its study note. Selecting an item auto-generates its note.
+- **Right panel (collapsible)** — chat with the AI. Questions are answered with the current subject, selected item, and its study note as context.
+
+### Persistent chat history
+- Every chat session is logged in the browser (localStorage), one growing session per subject.
+- The **History** modal lists all past sessions (subject, timestamp, message count); click any entry to read the full conversation.
+- "New chat" starts a fresh session for the same subject.
+
+### Module persistence (retrievable .md files)
+- Every generated module is saved on the server as a real markdown file plus structured JSON:
+  - `server/data/modules/<slug>/module.md` — human-readable export (includes study notes).
+  - `server/data/modules/<slug>/module.json` — structured data used to restore the interactive UI.
+  - `server/data/modules/index.json` — index of all saved modules.
+- A copy is also cached in the browser (localStorage) so modules remain available even if the server files are unreachable.
+
+### Dashboard landing page
+- On open, the app shows a dashboard listing every topic for which content has already been generated (subject, saved date, item count, study-note count).
+- Select an existing topic to restore its workspace, or create a new topic.
+- Each card offers **Download .md** to retrieve the saved markdown file.
+
+### AI endpoint configuration
+- Any OpenAI-compatible chat-completions endpoint works (`{baseUrl}/chat/completions`).
+- Base URL, model, and API key are configured in the setup screen; the API key is stored only in the user's browser and sent per-request to the backend, never persisted server-side.
+
+## Architecture
+
+Monorepo using npm workspaces with two packages:
+
+- `server/` — Node.js + Express backend (`server/index.js`)
+  - AI proxy and generation orchestrator (job system, retries).
+  - Module file persistence (`.md` + `.json`) under `server/data/modules/`.
+  - Serves the built client in production.
+- `client/` — Vite + React frontend (`client/src/`)
+  - `App.jsx` — app state machine, generation job subscription, persistence, chat.
+  - `components/` — `Dashboard`, `SetupForm`, `GenerationProgress`, `TopicsPanel`, `ContentPanel`, `ChatPanel`, `HistoryModal`.
+  - `lib/` — `export.js` (markdown/JSON export), `history.js` (chat history), `modules.js` (module cache), `storage.js` (AI endpoint config).
+
+### API endpoints
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/health` | Health check |
+| POST | `/api/module/generate` | Start a generation job, returns job id |
+| GET | `/api/module/generate/:id/events` | SSE stream of job progress (snapshot + live events) |
+| POST | `/api/module/:id/config` | Attach/refresh the AI config for a job |
+| POST | `/api/module/:id/resume` | Retry failed sections of a finished job |
+| POST | `/api/module/note` | Generate a deep-dive study note for an item |
+| POST | `/api/ai/chat` | Chat with the AI using current module context |
+| GET | `/api/modules` | List saved modules |
+| GET | `/api/modules/latest` | Full data of the most recently saved module |
+| GET | `/api/modules/:slug` | Full data of a saved module |
+| GET | `/api/modules/:slug/raw` | Download the saved `.md` file |
+| POST | `/api/modules/save` | Save/update a module as `.md` + `.json` |
+
+### Job/SSE events
+
+- `snapshot` — full current job state (sent on every (re)connect).
+- `status` — progress log message (including retry/cooldown notices).
+- `topics` — the mapped main topics.
+- `progress` — `{ done, total }` count of expanded sections.
+- `topicResult` — an expanded section (subtopics + items), or its error.
+- `done` — completed module plus warnings.
+- `error` — fatal error (e.g., the main-topics call failed after retries).
+
+## Getting Started
+
+Prerequisites: Node.js 18+ (uses built-in `fetch`).
+
+```bash
+# Install dependencies (all workspaces)
+npm install
+
+# Development: backend on :4000, Vite client on :5173 (proxies /api to :4000)
+npm run dev
+
+# Production: build client, serve everything from :4000
+npm start
+```
+
+Open the app, expand **"Configure AI endpoint settings"** in the setup screen, and enter your OpenAI-compatible Base URL, model, and API key. Then type the topic you want to learn and click **Build my learning module**.
+
+## Configuration
+
+Environment variables (optional):
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `PORT` | `4000` | Backend/server port |
+| `JOB_DIR` | OS temp dir | Where generation job state is persisted |
+| `MODULES_DIR` | `server/data/modules` | Where saved modules (`module.md`, `module.json`) live |
+
+Client defaults (editable in the UI): base URL `https://api.openai.com/v1`, model `gpt-4o-mini`.
+
+## Data storage summary
+
+| What | Where | Notes |
+| --- | --- | --- |
+| AI endpoint config | Browser localStorage | API key never sent to the server for storage |
+| Chat history | Browser localStorage | Keyed per session, browsable in the History modal |
+| Saved modules | `server/data/modules/<slug>/` | `module.md` + `module.json`, plus a localStorage cache |
+| Generation jobs | `JOB_DIR` temp dir | Resume-safe job state (API keys excluded) |
