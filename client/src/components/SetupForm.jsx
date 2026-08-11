@@ -1,18 +1,15 @@
 import { useState } from 'react'
-import { DEFAULT_CONFIG, loadConfig, saveConfig } from '../lib/storage.js'
+import ModelSelector from './ModelSelector.jsx'
+import SettingsModal from './SettingsModal.jsx'
 
-export default function SetupForm({ onStart }) {
+export default function SetupForm({ profiles, selection, onProfilesChange, onSelectionChange, onStart }) {
   const [topic, setTopic] = useState('')
-  const [config, setConfig] = useState(loadConfig)
   const [showSettings, setShowSettings] = useState(false)
-
-  const update = (key) => (e) => setConfig((c) => ({ ...c, [key]: e.target.value }))
 
   const submit = (e) => {
     e.preventDefault()
     if (!topic.trim()) return
-    saveConfig(config)
-    onStart(topic.trim(), config)
+    onStart(topic.trim())
   }
 
   return (
@@ -35,39 +32,26 @@ export default function SetupForm({ onStart }) {
         />
       </label>
 
+      <div className="field">
+        <span className="field-label">Generate with</span>
+        <ModelSelector profiles={profiles} selection={selection} onSelectionChange={onSelectionChange} />
+        <p className="hint">Any OpenAI-compatible endpoint ({'{baseUrl}'}/chat/completions) works.</p>
+      </div>
+
       <button className="btn primary" disabled={!topic.trim()} type="submit">
         Build my learning module
       </button>
 
-      <button className="btn ghost" type="button" onClick={() => setShowSettings((s) => !s)}>
-        {showSettings ? 'Hide' : 'Configure'} AI endpoint settings
+      <button className="btn ghost" type="button" onClick={() => setShowSettings(true)}>
+        Manage AI endpoints
       </button>
 
       {showSettings && (
-        <div className="settings">
-          <label className="field">
-            <span className="field-label">Base URL</span>
-            <input value={config.baseUrl} onChange={update('baseUrl')} placeholder={DEFAULT_CONFIG.baseUrl} />
-          </label>
-          <label className="field">
-            <span className="field-label">Model</span>
-            <input value={config.model} onChange={update('model')} placeholder={DEFAULT_CONFIG.model} />
-          </label>
-          <label className="field">
-            <span className="field-label">API Key</span>
-            <input
-              type="password"
-              value={config.apiKey}
-              onChange={update('apiKey')}
-              placeholder="sk-..."
-              autoComplete="off"
-            />
-          </label>
-          <p className="hint">
-            The API key is stored only in your browser and sent to this app's backend, which talks to your endpoint.
-            Any OpenAI-compatible endpoint ({'{baseUrl}'}/chat/completions) works.
-          </p>
-        </div>
+        <SettingsModal
+          profiles={profiles}
+          onProfilesChange={onProfilesChange}
+          onClose={() => setShowSettings(false)}
+        />
       )}
     </form>
   )

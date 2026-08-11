@@ -1,4 +1,46 @@
-export default function ContentPanel({ subject, selected, note, loading, error, onGenerate, noteCount }) {
+import ModelSelector from './ModelSelector.jsx'
+
+function NoteBody({ note }) {
+  return (
+    <>
+      <p className="note-summary">{note.summary}</p>
+      {note.keyPoints?.length > 0 && (
+        <>
+          <h4 className="note-h">Key points</h4>
+          <ul className="note-keys">
+            {note.keyPoints.map((k, i) => <li key={i}>{k}</li>)}
+          </ul>
+        </>
+      )}
+      {note.learnByDoing && (
+        <p className="note-doing"><strong>Practice:</strong> {note.learnByDoing}</p>
+      )}
+      {note.resources?.length > 0 && (
+        <p className="note-resources"><strong>Resources:</strong> {note.resources.join(' · ')}</p>
+      )}
+    </>
+  )
+}
+
+export default function ContentPanel({
+  subject,
+  selected,
+  note,
+  loading,
+  error,
+  onGenerate,
+  noteCount,
+  profiles,
+  reviewSelection,
+  onReviewSelectionChange,
+  altNote,
+  altLoading,
+  altError,
+  onGenerateAlternative,
+  onAcceptAlternative,
+  onDiscardAlternative,
+  altLabel
+}) {
   return (
     <div className="content">
       {!selected ? (
@@ -28,25 +70,40 @@ export default function ContentPanel({ subject, selected, note, loading, error, 
             </div>
           )}
 
-          {note && (
+          {note && !loading && (
             <div className="note">
-              <p className="note-summary">{note.summary}</p>
+              <NoteBody note={note} />
+            </div>
+          )}
 
-              {note.keyPoints?.length > 0 && (
-                <>
-                  <h4 className="note-h">Key points</h4>
-                  <ul className="note-keys">
-                    {note.keyPoints.map((k, i) => <li key={i}>{k}</li>)}
-                  </ul>
-                </>
-              )}
+          {note && (
+            <div className="compare">
+              <h4 className="note-h">Review with another endpoint</h4>
+              <div className="compare-controls">
+                <ModelSelector
+                  profiles={profiles}
+                  selection={reviewSelection}
+                  onSelectionChange={onReviewSelectionChange}
+                  compact
+                />
+                <button className="btn" onClick={onGenerateAlternative} disabled={altLoading}>
+                  {altLoading ? 'Generating…' : altNote ? 'Regenerate alternative' : 'Generate alternative'}
+                </button>
+              </div>
 
-              {note.learnByDoing && (
-                <p className="note-doing"><strong>Practice:</strong> {note.learnByDoing}</p>
-              )}
+              {altError && <div className="note error"><span>{altError}</span></div>}
 
-              {note.resources?.length > 0 && (
-                <p className="note-resources"><strong>Resources:</strong> {note.resources.join(' · ')}</p>
+              {altNote && (
+                <div className="alt-note">
+                  <div className="alt-head">Alternative from {altLabel}</div>
+                  <div className="alt-body">
+                    <NoteBody note={altNote} />
+                  </div>
+                  <div className="alt-actions">
+                    <button className="btn primary" onClick={onAcceptAlternative}>Replace current note</button>
+                    <button className="btn" onClick={onDiscardAlternative}>Discard</button>
+                  </div>
+                </div>
               )}
             </div>
           )}

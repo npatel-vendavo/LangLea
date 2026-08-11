@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
+import ModelSelector from './ModelSelector.jsx'
 
-export default function ChatPanel({ session, subject, onSend, busy, error, onNewChat }) {
+export default function ChatPanel({ session, subject, profiles, chatSelection, onChatSelectionChange, onSend, busy, error, onNewChat }) {
   const [input, setInput] = useState('')
   const listRef = useRef(null)
 
@@ -24,6 +25,16 @@ export default function ChatPanel({ session, subject, onSend, busy, error, onNew
           <h3 className="panel-title">Chat</h3>
         </div>
         <button className="btn tiny" onClick={onNewChat} title="Start a fresh chat for this subject">New chat</button>
+      </div>
+
+      <div className="chat-selector">
+        <span className="field-label">Chat with</span>
+        <ModelSelector
+          profiles={profiles}
+          selection={chatSelection}
+          onSelectionChange={onChatSelectionChange}
+          compact
+        />
       </div>
 
       <div className="chat-msgs" ref={listRef}>

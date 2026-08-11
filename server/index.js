@@ -146,6 +146,25 @@ Return ONLY valid JSON in this exact shape (no markdown, no extra text):
   "summary": "2-4 sentence plain-language explanation of the concept",
   "keyPoints": ["key point 1", "key point 2", "..."],
   "learnByDoing": "one concrete hands-on exercise the student can do to practice it",
+    "resources": ["1-2 book/chapter or link references a learner can use"]
+  }`
+}
+
+function reviewPrompt(item, subtopic, mainTopic, subject, note) {
+  return `You are a knowledgeable learning agent. A student is learning "${subject}" (module: "${mainTopic}", section: "${subtopic}").
+
+A different AI assistant wrote this study note for the learning item: "${item}".
+
+NOTE:
+${JSON.stringify(note, null, 2)}
+
+Write an improved study note for the same item. Improve clarity, accuracy, and depth, but keep it concise and study-ready. You may reuse good content from the original.
+
+Return ONLY valid JSON in this exact shape (no markdown, no extra text):
+{
+  "summary": "2-4 sentence plain-language explanation of the concept",
+  "keyPoints": ["key point 1", "key point 2", "..."],
+  "learnByDoing": "one concrete hands-on exercise the student can do to practice it",
   "resources": ["1-2 book/chapter or link references a learner can use"]
 }`
 }
@@ -632,6 +651,22 @@ app.post('/api/module/note', async (req, res) => {
       messages: [{ role: 'user', content: deepDivePrompt(item, subtopic, mainTopic, subject) }]
     })
     res.json({ note })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+app.post('/api/module/note/review', async (req, res) => {
+  const { item, subtopic, mainTopic, subject, note, config, reviewConfig } = req.body || {}
+  const cfg = reviewConfig || config
+  if (!item || !note || !cfg) return res.status(400).json({ error: 'Missing item, note, or config' })
+  try {
+    const reviewed = await callJson({
+      ...cfg,
+      retries: 5,
+      messages: [{ role: 'user', content: reviewPrompt(item, subtopic, mainTopic, subject, note) }]
+    })
+    res.json({ note: reviewed })
   } catch (e) {
     res.status(500).json({ error: e.message })
   }

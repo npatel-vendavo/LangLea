@@ -39,9 +39,20 @@ An AI-powered learning module generator that acts as a learning agent. Tell it w
 - Select an existing topic to restore its workspace, or create a new topic.
 - Each card offers **Download .md** to retrieve the saved markdown file.
 
-### AI endpoint configuration
+### AI endpoint configuration (multiple endpoints, multiple models)
 - Any OpenAI-compatible chat-completions endpoint works (`{baseUrl}/chat/completions`).
-- Base URL, model, and API key are configured in the setup screen; the API key is stored only in the user's browser and sent per-request to the backend, never persisted server-side.
+- Manage endpoints in the **Settings** section (open from the dashboard, the setup screen, or the module topbar): add/remove/rename endpoints, and give each endpoint a Base URL, API key, and any number of models.
+- Pick which endpoint + model to use for each purpose:
+  - **Generate with** — used for building modules and study notes (setup screen).
+  - **Chat with** — used by the AI tutor in the right panel.
+  - **Review with** — used to generate alternative study notes (see below).
+- API keys are stored only in the user's browser and sent per-request to the backend, never persisted server-side. Selections and endpoint definitions are stored in browser localStorage.
+- Selections stay valid automatically: if an endpoint is renamed or removed, the app re-points each purpose to an existing endpoint/model.
+
+### Review study notes with a second endpoint
+- For any generated study note, the **Review with another endpoint** section lets you ask a different endpoint/model to produce an improved alternative.
+- The alternative is shown side by side; you can **Replace current note**, discard it, or regenerate it.
+- This is handy for cross-checking accuracy and for spreading load across endpoints to avoid rate limits.
 
 ## Architecture
 
@@ -53,8 +64,8 @@ Monorepo using npm workspaces with two packages:
   - Serves the built client in production.
 - `client/` — Vite + React frontend (`client/src/`)
   - `App.jsx` — app state machine, generation job subscription, persistence, chat.
-  - `components/` — `Dashboard`, `SetupForm`, `GenerationProgress`, `TopicsPanel`, `ContentPanel`, `ChatPanel`, `HistoryModal`.
-  - `lib/` — `export.js` (markdown/JSON export), `history.js` (chat history), `modules.js` (module cache), `storage.js` (AI endpoint config).
+  - `components/` — `Dashboard`, `SetupForm`, `GenerationProgress`, `TopicsPanel`, `ContentPanel`, `ChatPanel`, `HistoryModal`, `SettingsModal`, `ModelSelector`, `ProfileManager`.
+  - `lib/` — `export.js` (markdown/JSON export), `history.js` (chat history), `modules.js` (module cache), `storage.js` (endpoint profiles + per-purpose selection).
 
 ### API endpoints
 
@@ -66,6 +77,7 @@ Monorepo using npm workspaces with two packages:
 | POST | `/api/module/:id/config` | Attach/refresh the AI config for a job |
 | POST | `/api/module/:id/resume` | Retry failed sections of a finished job |
 | POST | `/api/module/note` | Generate a deep-dive study note for an item |
+| POST | `/api/module/note/review` | Generate an alternative study note using a (different) endpoint |
 | POST | `/api/ai/chat` | Chat with the AI using current module context |
 | GET | `/api/modules` | List saved modules |
 | GET | `/api/modules/latest` | Full data of the most recently saved module |
@@ -98,7 +110,7 @@ npm run dev
 npm start
 ```
 
-Open the app, expand **"Configure AI endpoint settings"** in the setup screen, and enter your OpenAI-compatible Base URL, model, and API key. Then type the topic you want to learn and click **Build my learning module**.
+Open the app and either pick a saved module or click **+ New topic**. In the **Settings** section, add at least one OpenAI-compatible endpoint (Base URL, model, and API key — the UI comes with a default "Default" profile pre-loaded). Pick the endpoint to **Generate with**, type the topic you want to learn, and click **Build my learning module**. Chat and review endpoints can be chosen later from the workspace panels.
 
 ## Configuration
 
@@ -110,13 +122,13 @@ Environment variables (optional):
 | `JOB_DIR` | OS temp dir | Where generation job state is persisted |
 | `MODULES_DIR` | `server/data/modules` | Where saved modules (`module.md`, `module.json`) live |
 
-Client defaults (editable in the UI): base URL `https://api.openai.com/v1`, model `gpt-4o-mini`.
+Client defaults (editable in the UI): a "Default" endpoint profile with base URL `https://api.openai.com/v1` and model `gpt-4o-mini`.
 
 ## Data storage summary
 
 | What | Where | Notes |
 | --- | --- | --- |
-| AI endpoint config | Browser localStorage | API key never sent to the server for storage |
+| AI endpoint profiles + per-purpose selection | Browser localStorage (`la-ai-profiles`, `la-ai-selection`) | Each profile has name, Base URL, API key, models[]; selection picks generation/chat/review profile + model |
 | Chat history | Browser localStorage | Keyed per session, browsable in the History modal |
 | Saved modules | `server/data/modules/<slug>/` | `module.md` + `module.json`, plus a localStorage cache |
 | Generation jobs | `JOB_DIR` temp dir | Resume-safe job state (API keys excluded) |

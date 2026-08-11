@@ -5,18 +5,27 @@ import TopicsPanel from './components/TopicsPanel.jsx'
 import ContentPanel from './components/ContentPanel.jsx'
 import ChatPanel from './components/ChatPanel.jsx'
 import HistoryModal from './components/HistoryModal.jsx'
+import SettingsModal from './components/SettingsModal.jsx'
 import Dashboard from './components/Dashboard.jsx'
 import { itemKey, moduleToMarkdown } from './lib/export.js'
 import { loadCurrentSession, startSession, appendMessage } from './lib/history.js'
 import { getLastModule, saveModule } from './lib/modules.js'
-import { loadConfig } from './lib/storage.js'
+import {
+  loadProfiles,
+  saveProfiles,
+  loadSelection,
+  saveSelection,
+  resolveConfig,
+  profileLabel
+} from './lib/storage.js'
 
 export default function App() {
   const lastModule = getLastModule()
 
+  const [profiles, setProfiles] = useState(loadProfiles)
+  const [selection, setSelection] = useState(() => loadSelection(loadProfiles()))
   const [phase, setPhase] = useState('dashboard')
   const [subject, setSubject] = useState(() => lastModule?.subject ?? '')
-  const [config, setConfig] = useState(loadConfig)
   const [logs, setLogs] = useState([])
   const [progress, setProgress] = useState({ done: 0, total: 0 })
   const [module, setModule] = useState(() => lastModule?.module ?? null)
@@ -33,6 +42,11 @@ export default function App() {
   const [leftOpen, setLeftOpen] = useState(true)
   const [rightOpen, setRightOpen] = useState(true)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+
+  const [altNote, setAltNote] = useState(null)
+  const [altLoading, setAltLoading] = useState(false)
+  const [altError, setAltError] = useState('')
 
   const [session, setSession] = useState(() => {
     const cur = loadCurrentSession()
@@ -47,6 +61,52 @@ export default function App() {
   const subjectRef = useRef(lastModule?.subject ?? '')
 
   const selectedKey = selected ? itemKey(selected.main.title, selected.sub.title, selected.item) : null
+
+  const genSelection = { profileId: selection.profileId, model: selection.model }
+  const chatSelection = { profileId: selection.chatProfileId, model: selection.chatModel }
+  const reviewSelection = { profileId: selection.reviewProfileId, model: selection.reviewModel }
+  const genConfig = resolveConfig(profiles, genSelection)
+  const chatConfig = resolveConfig(profiles, chatSelection)
+  const altLabel = profileLabel(profiles, reviewSelection)
+
+  const updateProfiles = (list) => {
+    setProfiles(list)
+    saveProfiles(list)
+  }
+
+  const updateSelection = (patch) => {
+    setSelection((s) => {
+      const next = { ...s, ...patch }
+      saveSelection(next)
+      return next
+    })
+  }
+
+  const handleGenSelection = ({ profileId, model }) => updateSelection({ profileId, model })
+  const handleChatSelection = ({ profileId, model }) => updateSelection({ chatProfileId: profileId, chatModel: model })
+  const handleReviewSelection = ({ profileId, model }) => updateSelection({ reviewProfileId: profileId, reviewModel: model })
+
+  /* keep selections valid if a profile/model is renamed or removed */
+  useEffect(() => {
+    setSelection((s) => {
+      const p = profiles.find((x) => x.id === s.profileId) || profiles[0]
+      const cp = profiles.find((x) => x.id === s.chatProfileId) || profiles[0]
+      const rp = profiles.find((x) => x.id === s.reviewProfileId) || profiles[1] || profiles[0]
+      const next = {
+        profileId: p.id,
+        model: p.models.includes(s.model) ? s.model : p.models[0],
+        chatProfileId: cp.id,
+        chatModel: cp.models.includes(s.chatModel) ? s.chatModel : cp.models[0],
+        reviewProfileId: rp.id,
+        reviewModel: rp.models.includes(s.reviewModel) ? s.reviewModel : rp.models[0]
+      }
+      if (JSON.stringify(next) !== JSON.stringify(s)) {
+        saveSelection(next)
+        return next
+      }
+      return s
+    })
+  }, [profiles])
 
   const stopStream = () => {
     streamRef.current.cancelled = true
@@ -74,6 +134,8 @@ export default function App() {
     setLogs([])
     setProgress({ done: entry.module.mainTopics.length, total: entry.module.mainTopics.length })
     setSelected(null)
+    setAltNote(null)
+    setAltError('')
     setSession(ensureSession(entry.subject))
     setStreamIdle()
     setPhase('module')
@@ -111,10 +173,10 @@ export default function App() {
 
   /* ---------------- generation ---------------- */
 
-  const start = async (topic, cfg) => {
+  const start = async (topic) => {
+    const cfg = genConfig
     subjectRef.current = topic
     setSubject(topic)
-    setConfig(cfg)
     setModule(null)
     setNotes({})
     setNoteErrors({})
@@ -123,6 +185,7 @@ export default function App() {
     setLogs([])
     setProgress({ done: 0, total: 0 })
     setSelected(null)
+    setAltNote(null)
     setSession(ensureSession(topic))
     setPhase('generating')
 
@@ -285,7 +348,7 @@ export default function App() {
       const res = await fetch('/api/module/note', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ item, subtopic: sub.title, mainTopic: main.title, subject, config })
+        body: JSON.stringify({ item, subtopic: sub.title, mainTopic: main.title, subject, config: genConfig })
       })
       const body = await res.json()
       if (!res.ok) throw new Error(body.error || 'Failed to generate note')
@@ -299,8 +362,46 @@ export default function App() {
 
   const handleSelect = (main, sub, item) => {
     setSelected({ main, sub, item })
+    setAltNote(null)
+    setAltError('')
     const key = itemKey(main.title, sub.title, item)
     if (!notes[key] && !loadingNotes[key] && !noteErrors[key]) generateNote(main, sub, item)
+  }
+
+  const generateAlternative = async () => {
+    if (!selected || altLoading) return
+    setAltLoading(true)
+    setAltError('')
+    try {
+      const res = await fetch('/api/module/note/review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          item: selected.item,
+          subtopic: selected.sub.title,
+          mainTopic: selected.main.title,
+          subject,
+          note: notes[selectedKey],
+          config: genConfig,
+          reviewConfig: resolveConfig(profiles, reviewSelection)
+        })
+      })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error || 'Review failed')
+      setAltNote(body.note)
+    } catch (e) {
+      setAltError(e.message)
+    } finally {
+      setAltLoading(false)
+    }
+  }
+
+  const acceptAlternative = () => {
+    if (!altNote || !selected) return
+    const key = itemKey(selected.main.title, selected.sub.title, selected.item)
+    setNotes((s) => ({ ...s, [key]: altNote }))
+    setAltNote(null)
+    setAltError('')
   }
 
   const generateAllNotes = async () => {
@@ -328,12 +429,12 @@ export default function App() {
       const res = await fetch(`/api/module/${id}/resume`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config })
+        body: JSON.stringify({ config: genConfig })
       })
       const body = await res.json()
       if (!res.ok) throw new Error(body.error || `Resume failed (${res.status})`)
       streamRef.current = { jobId: id, cancelled: false, subscribing: false, finished: false }
-      subscribe(id, config, 0)
+      subscribe(id, genConfig, 0)
     } catch (e) {
       setFatalError(e.message)
       setPhase('module')
@@ -368,7 +469,7 @@ export default function App() {
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config, messages: buildChatMessages(nextMessages) })
+        body: JSON.stringify({ config: chatConfig, messages: buildChatMessages(nextMessages) })
       })
       const body = await res.json()
       if (!res.ok) throw new Error(body.error || `Chat failed (${res.status})`)
@@ -410,6 +511,7 @@ export default function App() {
           onOpen={openSaved}
           onCreate={() => setPhase('setup')}
           onHistory={() => setHistoryOpen(true)}
+          onSettings={() => setSettingsOpen(true)}
         />
       )}
 
@@ -417,7 +519,13 @@ export default function App() {
         <div className="container">
           {phase === 'setup' && (
             <>
-              <SetupForm onStart={start} />
+              <SetupForm
+                profiles={profiles}
+                selection={genSelection}
+                onProfilesChange={updateProfiles}
+                onSelectionChange={handleGenSelection}
+                onStart={start}
+              />
               {fatalError && <div className="fatal">{fatalError}</div>}
             </>
           )}
@@ -442,6 +550,7 @@ export default function App() {
             </div>
             <div className="topbar-title">Learning Agent{subject ? <span className="topbar-sub"> · {subject}</span> : ''}</div>
             <div className="topbar-actions">
+              <button className="btn topbar-btn" onClick={() => setSettingsOpen(true)} title="AI endpoints">Settings</button>
               <button className="btn topbar-btn" onClick={() => { stopStream(); setPhase('setup') }}>New topic</button>
               <button className="btn topbar-btn" onClick={exportMarkdown} title="Export module to Markdown">Export</button>
               <button className="btn topbar-btn" onClick={() => setHistoryOpen(true)}>History</button>
@@ -478,6 +587,16 @@ export default function App() {
                 error={selectedKey ? noteErrors[selectedKey] : undefined}
                 onGenerate={selected ? () => generateNote(selected.main, selected.sub, selected.item) : undefined}
                 noteCount={Object.keys(notes).length}
+                profiles={profiles}
+                reviewSelection={reviewSelection}
+                onReviewSelectionChange={handleReviewSelection}
+                altNote={altNote}
+                altLoading={altLoading}
+                altError={altError}
+                onGenerateAlternative={generateAlternative}
+                onAcceptAlternative={acceptAlternative}
+                onDiscardAlternative={() => setAltNote(null)}
+                altLabel={altLabel}
               />
             </main>
 
@@ -486,6 +605,9 @@ export default function App() {
                 <ChatPanel
                   session={session}
                   subject={subject}
+                  profiles={profiles}
+                  chatSelection={chatSelection}
+                  onChatSelectionChange={handleChatSelection}
                   onSend={sendChat}
                   busy={chatBusy}
                   error={chatError}
@@ -498,6 +620,13 @@ export default function App() {
       )}
 
       {historyOpen && <HistoryModal onClose={() => setHistoryOpen(false)} />}
+      {settingsOpen && (
+        <SettingsModal
+          profiles={profiles}
+          onProfilesChange={updateProfiles}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
     </div>
   )
 }
