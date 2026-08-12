@@ -49,6 +49,12 @@ An AI-powered learning module generator that acts as a learning agent. Tell it w
 - API keys are stored only in the user's browser and sent per-request to the backend, never persisted server-side. Selections and endpoint definitions are stored in browser localStorage.
 - Selections stay valid automatically: if an endpoint is renamed or removed, the app re-points each purpose to an existing endpoint/model.
 
+### AI interaction logging
+- Every request the server sends to an AI endpoint is recorded as a JSON file: the AI endpoint (base URL), model name, the query (messages sent), the answer received, timestamps, duration, and per-attempt details.
+- Logs are stored under `server/data/ai-logs/<id>.json` with a capped `index.json` (latest 500).
+- If an AI response can't be parsed as JSON, the system **retries automatically** and flags the interaction as unparseable in the log.
+- The **Logs** page (dashboard or workspace topbar) lists all interactions — with a "Failures only" filter — and lets you inspect the full request, response, and attempt history. Unparseable outputs are highlighted.
+
 ### Review study notes with a second endpoint
 - For any generated study note, the **Review with another endpoint** section lets you ask a different endpoint/model to produce an improved alternative.
 - The alternative is shown side by side; you can **Replace current note**, discard it, or regenerate it.
@@ -58,9 +64,10 @@ An AI-powered learning module generator that acts as a learning agent. Tell it w
 
 Monorepo using npm workspaces with two packages:
 
-- `server/` — Node.js + Express backend (`server/index.js`)
+- `server/` — Node.js + Express backend (`server/index.js`, `server/ai-log.js`)
   - AI proxy and generation orchestrator (job system, retries).
   - Module file persistence (`.md` + `.json`) under `server/data/modules/`.
+  - AI interaction logging (JSON) under `server/data/ai-logs/`.
   - Serves the built client in production.
 - `client/` — Vite + React frontend (`client/src/`)
   - `App.jsx` — app state machine, generation job subscription, persistence, chat.
@@ -72,6 +79,8 @@ Monorepo using npm workspaces with two packages:
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/health` | Health check |
+| GET | `/api/logs` | List AI interaction log entries (metadata) |
+| GET | `/api/logs/:id` | Full AI interaction log entry |
 | POST | `/api/module/generate` | Start a generation job, returns job id |
 | GET | `/api/module/generate/:id/events` | SSE stream of job progress (snapshot + live events) |
 | POST | `/api/module/:id/config` | Attach/refresh the AI config for a job |
@@ -121,6 +130,7 @@ Environment variables (optional):
 | `PORT` | `4000` | Backend/server port |
 | `JOB_DIR` | OS temp dir | Where generation job state is persisted |
 | `MODULES_DIR` | `server/data/modules` | Where saved modules (`module.md`, `module.json`) live |
+| `AI_LOG_DIR` | `server/data/ai-logs` | Where AI interaction logs are stored (`<id>.json` + `index.json`) |
 
 Client defaults (editable in the UI): a "Default" endpoint profile with base URL `https://api.openai.com/v1` and model `gpt-4o-mini`.
 
@@ -131,4 +141,5 @@ Client defaults (editable in the UI): a "Default" endpoint profile with base URL
 | AI endpoint profiles + per-purpose selection | Browser localStorage (`la-ai-profiles`, `la-ai-selection`) | Each profile has name, Base URL, API key, models[]; selection picks generation/chat/review profile + model |
 | Chat history | Browser localStorage | Keyed per session, browsable in the History modal |
 | Saved modules | `server/data/modules/<slug>/` | `module.md` + `module.json`, plus a localStorage cache |
+| AI interaction logs | `server/data/ai-logs/` | One JSON file per AI call (endpoint, model, query, output, time), plus an `index.json` |
 | Generation jobs | `JOB_DIR` temp dir | Resume-safe job state (API keys excluded) |

@@ -17,7 +17,7 @@ function downloadMarkdown(m) {
   window.open(`/api/modules/${m.slug}/raw`, '_blank')
 }
 
-export default function Dashboard({ currentSubject, onOpen, onCreate, onHistory, onSettings }) {
+export default function Dashboard({ currentSubject, onOpen, onCreate, onHistory, onSettings, onLogs }) {
   const [items, setItems] = useState([])
   const [loaded, setLoaded] = useState(false)
 
@@ -52,6 +52,7 @@ export default function Dashboard({ currentSubject, onOpen, onCreate, onHistory,
         </div>
         <div className="dash-actions">
           <button className="btn" onClick={onSettings}>Settings</button>
+          <button className="btn" onClick={onLogs}>Logs</button>
           <button className="btn" onClick={onHistory}>Chat history</button>
           <button className="btn primary" onClick={onCreate}>+ New topic</button>
         </div>

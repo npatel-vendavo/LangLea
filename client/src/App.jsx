@@ -6,6 +6,7 @@ import ContentPanel from './components/ContentPanel.jsx'
 import ChatPanel from './components/ChatPanel.jsx'
 import HistoryModal from './components/HistoryModal.jsx'
 import SettingsModal from './components/SettingsModal.jsx'
+import LogsPage from './components/LogsPage.jsx'
 import Dashboard from './components/Dashboard.jsx'
 import { itemKey, moduleToMarkdown } from './lib/export.js'
 import { loadCurrentSession, startSession, appendMessage } from './lib/history.js'
@@ -43,6 +44,7 @@ export default function App() {
   const [rightOpen, setRightOpen] = useState(true)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [logsOpen, setLogsOpen] = useState(false)
 
   const [altNote, setAltNote] = useState(null)
   const [altLoading, setAltLoading] = useState(false)
@@ -512,6 +514,7 @@ export default function App() {
           onCreate={() => setPhase('setup')}
           onHistory={() => setHistoryOpen(true)}
           onSettings={() => setSettingsOpen(true)}
+          onLogs={() => setLogsOpen(true)}
         />
       )}
 
@@ -550,6 +553,7 @@ export default function App() {
             </div>
             <div className="topbar-title">Learning Agent{subject ? <span className="topbar-sub"> · {subject}</span> : ''}</div>
             <div className="topbar-actions">
+              <button className="btn topbar-btn" onClick={() => setLogsOpen(true)} title="AI interaction logs">Logs</button>
               <button className="btn topbar-btn" onClick={() => setSettingsOpen(true)} title="AI endpoints">Settings</button>
               <button className="btn topbar-btn" onClick={() => { stopStream(); setPhase('setup') }}>New topic</button>
               <button className="btn topbar-btn" onClick={exportMarkdown} title="Export module to Markdown">Export</button>
@@ -627,6 +631,7 @@ export default function App() {
           onClose={() => setSettingsOpen(false)}
         />
       )}
+      {logsOpen && <LogsPage onClose={() => setLogsOpen(false)} />}
     </div>
   )
 }

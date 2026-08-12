@@ -4,6 +4,7 @@ import os from 'os'
 import fs from 'fs'
 import crypto from 'crypto'
 import { fileURLToPath } from 'url'
+import { initAiLog, logInteraction, listLogs, getLog } from './ai-log.js'
 
 const app = express()
 app.use(express.json({ limit: '2mb' }))
@@ -16,6 +17,9 @@ fs.mkdirSync(JOB_DIR, { recursive: true })
 
 const MODULES_DIR = process.env.MODULES_DIR || path.join(__dirname, 'data', 'modules')
 fs.mkdirSync(MODULES_DIR, { recursive: true })
+
+const AI_LOG_DIR = process.env.AI_LOG_DIR || path.join(__dirname, 'data', 'ai-logs')
+initAiLog(AI_LOG_DIR)
 
 const jobs = new Map()
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -39,9 +43,29 @@ function classifyError(status, text) {
   )
 }
 
-async function callChat({ baseUrl, apiKey, model, messages, temperature = 0.3, maxTokens = 4000, retries = 5, onRetry }) {
+async function callChat({ baseUrl, apiKey, model, messages, temperature = 0.3, maxTokens = 4000, retries = 5, onRetry, parseJson = false }) {
   if (!model) throw new Error('Missing AI model. Provide it in Settings.')
   const url = `${normalizeBaseUrl(baseUrl)}/chat/completions`
+  const started = Date.now()
+  const entry = {
+    time: new Date().toISOString(),
+    baseUrl: url,
+    model,
+    kind: parseJson ? 'json' : 'chat',
+    temperature,
+    maxTokens,
+    parseJson,
+    messages,
+    attempts: [],
+    output: null,
+    success: false,
+    parsed: null,
+    error: null
+  }
+  const finish = (patch) => {
+    Object.assign(entry, patch, { durationMs: Date.now() - started })
+    logInteraction(entry)
+  }
   let delay = 1000
 
   for (let attempt = 1; attempt <= retries; attempt++) {
@@ -56,24 +80,67 @@ async function callChat({ baseUrl, apiKey, model, messages, temperature = 0.3, m
         body: JSON.stringify({ model, messages, temperature, max_tokens: maxTokens })
       })
     } catch (e) {
+      entry.attempts.push({ attempt, error: e.message })
       if (attempt < retries) {
         onRetry?.(attempt, retries, `network error: ${e.message}`)
         await sleep(delay)
         delay = Math.min(delay * 2, 20000) + Math.random() * 500
         continue
       }
-      throw new Error(`Could not reach AI endpoint ${url}: ${e.message}`)
-    }
-
-    if (res.ok) {
-      const data = await res.json()
-      const content = data?.choices?.[0]?.message?.content
-      if (!content) throw new Error('AI returned no content')
-      return content
+      const err = new Error(`Could not reach AI endpoint ${url}: ${e.message}`)
+      finish({ error: err.message })
+      throw err
     }
 
     const text = await res.text()
+    let content = null
+    if (res.ok) {
+      try {
+        content = JSON.parse(text)?.choices?.[0]?.message?.content ?? null
+      } catch {
+        content = null
+      }
+    }
+
+    if (content) {
+      entry.output = content
+      entry.attempts.push({
+        attempt,
+        status: res.status,
+        ok: true,
+        content: content.length > 12000 ? `${content.slice(0, 12000)}…` : content
+      })
+      entry.success = true
+
+      if (!parseJson) {
+        finish({ parsed: null })
+        return content
+      }
+
+      try {
+        extractJson(content)
+        finish({ parsed: true })
+        return content
+      } catch (e) {
+        entry.parsed = false
+        entry.attempts[entry.attempts.length - 1].parseError = e.message
+        const parseErr = `AI returned unparseable output (${e.message})`
+        if (attempt < retries) {
+          onRetry?.(attempt, retries, parseErr)
+          await sleep(delay)
+          delay = Math.min(delay * 2, 20000) + Math.random() * 500
+          continue
+        }
+        const err = new Error(parseErr)
+        err.retryable = true
+        finish({ error: parseErr })
+        throw err
+      }
+    }
+
     const retryable = classifyError(res.status, text)
+    const errText = res.ok ? 'AI returned no content' : text
+    entry.attempts.push({ attempt, status: res.status, ok: false, retryable, error: errText.slice(0, 500) })
     if (retryable && attempt < retries) {
       const retryAfter = parseInt(res.headers.get('retry-after') || '', 10)
       if (retryAfter > 0) delay = retryAfter * 1000
@@ -83,12 +150,16 @@ async function callChat({ baseUrl, apiKey, model, messages, temperature = 0.3, m
       continue
     }
 
-    const err = new Error(`AI request failed (${res.status}): ${text.slice(0, 500)}`)
+    const errMsg = res.ok ? 'AI returned no content' : `AI request failed (${res.status}): ${text.slice(0, 500)}`
+    const err = new Error(errMsg)
     err.retryable = retryable
+    finish({ error: errMsg })
     throw err
   }
 
-  throw new Error('AI request failed after exhausting retries')
+  const err = new Error('AI request failed after exhausting retries')
+  finish({ error: err.message })
+  throw err
 }
 
 function extractJson(text) {
@@ -100,7 +171,7 @@ function extractJson(text) {
 }
 
 async function callJson(opts) {
-  const text = await callChat(opts)
+  const text = await callChat({ ...opts, parseJson: true })
   return extractJson(text)
 }
 
@@ -526,6 +597,18 @@ function rebuildModuleIndex() {
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true })
+})
+
+/* ----- AI interaction logs ----- */
+
+app.get('/api/logs', (_req, res) => {
+  res.json({ logs: listLogs() })
+})
+
+app.get('/api/logs/:id', (req, res) => {
+  const log = getLog(req.params.id)
+  if (!log) return res.status(404).json({ error: 'Log entry not found' })
+  res.json(log)
 })
 
 /* ----- saved modules (.md files) ----- */
