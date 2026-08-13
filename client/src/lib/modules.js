@@ -17,8 +17,8 @@ export function getLastModule() {
   }
 }
 
-export function saveModule({ subject, module, notes, warnings }) {
-  const entry = { subject, module, notes, warnings, savedAt: Date.now() }
+export function saveModule({ subject, module, notes, warnings, progress }) {
+  const entry = { subject, module, notes, warnings, progress: progress || {}, savedAt: Date.now() }
   try {
     const list = loadModules()
     const idx = list.findIndex((m) => m.subject === subject)

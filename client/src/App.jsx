@@ -38,8 +38,13 @@ export default function App() {
   const [loadingNotes, setLoadingNotes] = useState({})
   const [noteErrors, setNoteErrors] = useState({})
   const [generatingAll, setGeneratingAll] = useState(false)
+  const [tracked, setTracked] = useState(() => lastModule?.progress ?? {})
+
+  const [expandBusy, setExpandBusy] = useState({})
+  const [expandErrors, setExpandErrors] = useState({})
 
   const [selected, setSelected] = useState(null)
+  const [reveal, setReveal] = useState(null)
   const [leftOpen, setLeftOpen] = useState(true)
   const [rightOpen, setRightOpen] = useState(true)
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -131,6 +136,7 @@ export default function App() {
     setSubject(entry.subject)
     setModule(entry.module)
     setNotes(entry.notes || {})
+    setTracked(entry.progress || {})
     setWarnings(entry.warnings || [])
     setFatalError('')
     setLogs([])
@@ -162,26 +168,27 @@ export default function App() {
   useEffect(() => {
     if (phase !== 'module' || !module) return
     const t = setTimeout(() => {
-      const md = moduleToMarkdown(module, notes)
-      saveModule({ subject: subjectRef.current, module, notes, warnings })
+      const md = moduleToMarkdown(module, notes, tracked)
+      saveModule({ subject: subjectRef.current, module, notes, warnings, progress: tracked })
       fetch('/api/modules/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subject: subjectRef.current, module, notes, warnings, markdown: md })
+        body: JSON.stringify({ subject: subjectRef.current, module, notes, warnings, progress: tracked, markdown: md })
       }).catch(() => { /* server unavailable */ })
     }, 500)
     return () => clearTimeout(t)
-  }, [module, notes, warnings, phase])
+  }, [module, notes, warnings, tracked, phase])
 
   /* ---------------- generation ---------------- */
 
-  const start = async (topic) => {
+  const start = async (topic, mode = 'module') => {
     const cfg = genConfig
     subjectRef.current = topic
     setSubject(topic)
     setModule(null)
     setNotes({})
     setNoteErrors({})
+    setTracked({})
     setWarnings([])
     setFatalError('')
     setLogs([])
@@ -197,7 +204,7 @@ export default function App() {
       const res = await fetch('/api/module/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic, config: cfg })
+        body: JSON.stringify({ topic, mode, config: cfg })
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`)
@@ -366,8 +373,20 @@ export default function App() {
     setSelected({ main, sub, item })
     setAltNote(null)
     setAltError('')
+    if (main.title === 'Roadmap') return
     const key = itemKey(main.title, sub.title, item)
     if (!notes[key] && !loadingNotes[key] && !noteErrors[key]) generateNote(main, sub, item)
+  }
+
+  const isRoadmapEntry = (sel) => sel?.main?.title === 'Roadmap'
+
+  const openCourse = (main) => {
+    const sub = (main.subtopics || []).find((s) => s.items?.length > 0)
+    const item = sub?.items?.[0]
+    if (!sub || !item) return
+    const key = itemKey(main.title, sub.title, item)
+    setReveal({ main: main.title, sub: sub.title, key })
+    handleSelect(main, sub, item)
   }
 
   const generateAlternative = async () => {
@@ -408,11 +427,13 @@ export default function App() {
 
   const generateAllNotes = async () => {
     const items = []
-    sortedMainTopics(module).forEach((main) =>
-      main.subtopics.forEach((sub) =>
-        sub.items.forEach((item) => items.push({ main, sub, item }))
+    sortedMainTopics(module)
+      .filter((t) => t.title !== 'Roadmap')
+      .forEach((main) =>
+        main.subtopics.forEach((sub) =>
+          sub.items.forEach((item) => items.push({ main, sub, item }))
+        )
       )
-    )
     setGeneratingAll(true)
     for (const it of items) {
       await generateNote(it.main, it.sub, it.item)
@@ -443,6 +464,104 @@ export default function App() {
     } finally {
       setResuming(false)
     }
+  }
+
+  /* ---------------- manual editing & AI expand ---------------- */
+
+  const addMainTopic = (title) => {
+    const t = String(title || '').trim()
+    if (!t) return
+    setModule((m) => {
+      if (!m) return m
+      const maxIdx = m.mainTopics.reduce((a, x) => Math.max(a, x.index ?? 0), 0)
+      return { ...m, mainTopics: [...m.mainTopics, { index: maxIdx + 1, title: t, subtopics: [] }] }
+    })
+  }
+
+  const addSubtopic = (mainTitle, subTitle) => {
+    const s = String(subTitle || '').trim()
+    if (!s) return
+    setModule((m) => ({
+      ...m,
+      mainTopics: m.mainTopics.map((t) =>
+        t.title === mainTitle ? { ...t, subtopics: [...(t.subtopics || []), { title: s, items: [] }] } : t
+      )
+    }))
+  }
+
+  const addItem = (mainTitle, subTitle, item) => {
+    const it = String(item || '').trim()
+    if (!it) return
+    setModule((m) => ({
+      ...m,
+      mainTopics: m.mainTopics.map((t) =>
+        t.title === mainTitle
+          ? { ...t, subtopics: t.subtopics.map((s) => (s.title === subTitle ? { ...s, items: [...(s.items || []), it] } : s)) }
+          : t
+      )
+    }))
+  }
+
+  const expandMain = async (main) => {
+    const id = main.title
+    if (expandBusy[id]) return
+    setExpandBusy((s) => ({ ...s, [id]: true }))
+    setExpandErrors((s) => ({ ...s, [id]: '' }))
+    try {
+      const res = await fetch('/api/ai/expand', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'subtopics', config: genConfig, subject, mainTopic: id })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Expand failed')
+      setModule((m) => ({
+        ...m,
+        mainTopics: m.mainTopics.map((t) =>
+          t.title === id ? { ...t, subtopics: mergeSubtopicLists(t.subtopics, data.subtopics) } : t
+        )
+      }))
+    } catch (e) {
+      setExpandErrors((s) => ({ ...s, [id]: e.message }))
+    } finally {
+      setExpandBusy((s) => ({ ...s, [id]: false }))
+    }
+  }
+
+  const expandSub = async (mainTitle, sub) => {
+    const id = `${mainTitle}::${sub.title}`
+    if (expandBusy[id]) return
+    setExpandBusy((s) => ({ ...s, [id]: true }))
+    setExpandErrors((s) => ({ ...s, [id]: '' }))
+    try {
+      const res = await fetch('/api/ai/expand', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'items', config: genConfig, subject, mainTopic: mainTitle, subtopic: sub.title })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Expand failed')
+      setModule((m) => ({
+        ...m,
+        mainTopics: m.mainTopics.map((t) =>
+          t.title === mainTitle
+            ? { ...t, subtopics: t.subtopics.map((s) => (s.title === sub.title ? { ...s, items: mergeItems(s.items, data.items) } : s)) }
+            : t
+        )
+      }))
+    } catch (e) {
+      setExpandErrors((s) => ({ ...s, [id]: e.message }))
+    } finally {
+      setExpandBusy((s) => ({ ...s, [id]: false }))
+    }
+  }
+
+  const cycleStatus = (key) => {
+    setTracked((t) => {
+      const cur = t[key] || 'todo'
+      const next = cur === 'todo' ? 'in-progress' : cur === 'in-progress' ? 'done' : 'todo'
+      return { ...t, [key]: next }
+    })
   }
 
   /* ---------------- chat ---------------- */
@@ -570,6 +689,7 @@ export default function App() {
                 <TopicsPanel
                   module={module}
                   notes={notes}
+                  tracked={tracked}
                   selectedKey={selectedKey}
                   onSelect={handleSelect}
                   warnings={warnings}
@@ -578,6 +698,15 @@ export default function App() {
                   resuming={resuming}
                   onGenerateAll={generateAllNotes}
                   generatingAll={generatingAll}
+                  onAddMainTopic={addMainTopic}
+                  onAddSubtopic={addSubtopic}
+                  onAddItem={addItem}
+                  onExpandMain={expandMain}
+                  onExpandSub={expandSub}
+                  expandBusy={expandBusy}
+                  expandErrors={expandErrors}
+                  onCycleStatus={cycleStatus}
+                  reveal={reveal}
                 />
               </aside>
             )}
@@ -601,6 +730,10 @@ export default function App() {
                 onAcceptAlternative={acceptAlternative}
                 onDiscardAlternative={() => setAltNote(null)}
                 altLabel={altLabel}
+                roadmapEntry={isRoadmapEntry(selected)}
+                module={module}
+                tracked={tracked}
+                onOpenCourse={openCourse}
               />
             </main>
 
@@ -641,6 +774,22 @@ export default function App() {
 function sortedMainTopics(module) {
   if (!module) return []
   return [...module.mainTopics].sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
+}
+
+function mergeItems(existing, incoming) {
+  const set = new Set(existing || [])
+  for (const i of incoming || []) if (i) set.add(i)
+  return [...set]
+}
+
+function mergeSubtopicLists(existing, incoming) {
+  const map = new Map((existing || []).map((s) => [s.title, { ...s }]))
+  for (const s of incoming || []) {
+    const cur = map.get(s.title)
+    if (cur) cur.items = mergeItems(cur.items, s.items)
+    else map.set(s.title, { ...s, items: s.items || [] })
+  }
+  return [...map.values()]
 }
 
 function slug(text) {

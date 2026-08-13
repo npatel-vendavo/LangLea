@@ -1,4 +1,5 @@
 import ModelSelector from './ModelSelector.jsx'
+import RoadmapView from './RoadmapView.jsx'
 
 function NoteBody({ note }) {
   return (
@@ -39,7 +40,11 @@ export default function ContentPanel({
   onGenerateAlternative,
   onAcceptAlternative,
   onDiscardAlternative,
-  altLabel
+  altLabel,
+  roadmapEntry,
+  module,
+  tracked,
+  onOpenCourse
 }) {
   return (
     <div className="content">
@@ -49,6 +54,13 @@ export default function ContentPanel({
           <h2>{subject}</h2>
           <p>Select a topic item from the left panel to load its content here.</p>
         </div>
+      ) : roadmapEntry ? (
+        <RoadmapView
+          title={selected.item}
+          module={module}
+          tracked={tracked}
+          onOpenCourse={onOpenCourse}
+        />
       ) : (
         <div className="content-body">
           <nav className="breadcrumb">{selected.main.title} / {selected.sub.title}</nav>

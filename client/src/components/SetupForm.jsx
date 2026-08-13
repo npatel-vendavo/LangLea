@@ -4,12 +4,15 @@ import SettingsModal from './SettingsModal.jsx'
 
 export default function SetupForm({ profiles, selection, onProfilesChange, onSelectionChange, onStart }) {
   const [topic, setTopic] = useState('')
+  const [mode, setMode] = useState('module')
   const [showSettings, setShowSettings] = useState(false)
+
+  const isRoadmap = mode === 'roadmap'
 
   const submit = (e) => {
     e.preventDefault()
     if (!topic.trim()) return
-    onStart(topic.trim())
+    onStart(topic.trim(), mode)
   }
 
   return (
@@ -18,17 +21,29 @@ export default function SetupForm({ profiles, selection, onProfilesChange, onSel
         <span className="logo">🧠</span>
         <div>
           <h1>Learning Agent</h1>
-          <p>Tell me what you want to learn — I'll research it into a complete, structured learning module.</p>
+          <p>{isRoadmap ? 'Tell me your goal — I\'ll design the full roadmap of courses to get you there.' : 'Tell me what you want to learn — I\'ll research it into a complete, structured learning module.'}</p>
+        </div>
+      </div>
+
+      <div className="field">
+        <span className="field-label">What are you building?</span>
+        <div className="mode-toggle">
+          <button type="button" className={`mode-btn ${!isRoadmap ? 'active' : ''}`} onClick={() => setMode('module')}>
+            Learning module
+          </button>
+          <button type="button" className={`mode-btn ${isRoadmap ? 'active' : ''}`} onClick={() => setMode('roadmap')}>
+            Goal roadmap
+          </button>
         </div>
       </div>
 
       <label className="field">
-        <span className="field-label">What do you want to learn?</span>
+        <span className="field-label">{isRoadmap ? 'What is your goal?' : 'What do you want to learn?'}</span>
         <input
           autoFocus
           value={topic}
           onChange={(e) => setTopic(e.target.value)}
-          placeholder="e.g. Machine learning, Photography, Investing, Guitar..."
+          placeholder={isRoadmap ? 'e.g. Become a frontend engineer, Get into data science, Build and launch a SaaS...' : 'e.g. Machine learning, Photography, Investing, Guitar...'}
         />
       </label>
 
@@ -39,7 +54,7 @@ export default function SetupForm({ profiles, selection, onProfilesChange, onSel
       </div>
 
       <button className="btn primary" disabled={!topic.trim()} type="submit">
-        Build my learning module
+        {isRoadmap ? 'Build my roadmap' : 'Build my learning module'}
       </button>
 
       <button className="btn ghost" type="button" onClick={() => setShowSettings(true)}>
@@ -49,6 +64,8 @@ export default function SetupForm({ profiles, selection, onProfilesChange, onSel
       {showSettings && (
         <SettingsModal
           profiles={profiles}
+          selection={selection}
+          onSelectionChange={onSelectionChange}
           onProfilesChange={onProfilesChange}
           onClose={() => setShowSettings(false)}
         />

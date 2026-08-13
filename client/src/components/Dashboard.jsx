@@ -73,6 +73,7 @@ export default function Dashboard({ currentSubject, onOpen, onCreate, onHistory,
               <div className="dash-card" key={m.subject}>
                 <button className="dash-card-main" onClick={() => onOpen(m)}>
                   <span className="dash-card-title">{m.subject}</span>
+                  {(m.mode === 'roadmap' || m.module?.mode === 'roadmap') && <span className="current-tag roadmap-tag">roadmap</span>}
                   {m.subject === currentSubject && <span className="current-tag">current</span>}
                   <span className="dash-card-meta">
                     {new Date(m.savedAt).toLocaleString()} · {itemCount} items · {noteCount} study notes

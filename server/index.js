@@ -204,7 +204,26 @@ async function callJson(opts) {
 /* Prompts                                                             */
 /* ------------------------------------------------------------------ */
 
-function mainTopicsPrompt(topic) {
+function mainTopicsPrompt(topic, mode = 'module') {
+  if (mode === 'roadmap') {
+    return `You are a career and learning coach designing a step-by-step ROADMAP to achieve the goal: "${topic}".
+
+Analyze what it takes to reach this goal and identify ALL the COURSES / subject areas the learner must complete — the full set of knowledge and skills, from foundations to advanced to applied.
+
+Return ONLY valid JSON in this exact shape (no markdown, no extra text):
+{
+  "title": "A short, catchy name for the whole roadmap, e.g. \"Frontend Engineering Roadmap\"",
+  "topics": ["course 1", "course 2", "..."]
+}
+
+Requirements:
+- "title": Name the roadmap. For the goal "become a frontend engineer" use "Frontend Engineering Roadmap".
+- "topics": Include 8-12 courses. For "become a frontend engineer" this would include things like HTML/CSS, JavaScript, React, Next.js, state management, GraphQL/APIs, testing, tooling, and deployment.
+- Order strictly by dependency: foundations first, then intermediate, advanced, and finally applied/specialized.
+- Each course title must be descriptive and specific.
+- Courses should be mutually exclusive but collectively exhaustive for reaching the goal.`
+  }
+
   return `You are an expert curriculum designer creating a comprehensive learning module. A student wants to master: "${topic}".
 
 Design the MAIN TOPICS (modules/chapters) for a complete, structured learning path that takes a learner from absolute beginner to confident practitioner.
@@ -219,13 +238,21 @@ Requirements:
 - Order strictly from fundamentals → intermediate → advanced → specialized/applied
 - Each topic title must be descriptive and specific (e.g., not just "Variables" but "Variables, Data Types, and Type Systems")
 - Cover the full breadth: core concepts, patterns/practices, tools/ecosystem, real-world application, and emerging topics
-- Topics should be mutually exclusive but collectively exhaustive for the subject`
+- Topics should be mutually exclusive but collectively exhaustive for the subject
+`
 }
 
-function subtopicsPrompt(mainTopic, subject) {
-  return `You are an expert curriculum designer building a detailed learning module for "${subject}".
+function subtopicsPrompt(mainTopic, subject, mode = 'module') {
+  const intro =
+    mode === 'roadmap'
+      ? `You are designing a course for the learning roadmap "${subject}".
 
-For the main topic "${mainTopic}", create a comprehensive breakdown of SUBTOPICS and LEARNING ITEMS that a student must master.
+For the course "${mainTopic}", create a comprehensive breakdown of MODULES and LESSONS that a student must master.`
+      : `You are an expert curriculum designer building a detailed learning module for "${subject}".
+
+For the main topic "${mainTopic}", create a comprehensive breakdown of SUBTOPICS and LEARNING ITEMS that a student must master.`
+
+  return `${intro}
 
 Return ONLY valid JSON in this exact shape (no markdown, no extra text):
 {
@@ -241,6 +268,21 @@ Requirements:
 - Items must be specific, actionable, and measurable (e.g., not "Understand loops" but "Write for-loops, while-loops, and loop control statements (break/continue) with proper exit conditions")
 - Items should cover: key concepts/definitions, syntax/patterns, common pitfalls, best practices, and practical applications
 - Progress logically within the main topic: foundations → core techniques → patterns/idioms → advanced nuances → practical application
+- Avoid generic filler; every item should represent something a learner can actually practice or demonstrate`
+}
+
+function itemsPrompt(mainTopic, subtopic, subject) {
+  return `You are an expert curriculum designer. For the subject "${subject}", within the course/module "${mainTopic}", create the learning items (lessons/topics) for the subtopic: "${subtopic}".
+
+Return ONLY valid JSON in this exact shape (no markdown, no extra text):
+{
+  "items": ["specific learning item 1", "specific learning item 2", "..."]
+}
+
+Requirements:
+- Provide 5-7 concrete learning items
+- Items must be specific, actionable, and measurable
+- Cover: key concepts, syntax/patterns, common pitfalls, best practices, and practical application
 - Avoid generic filler; every item should represent something a learner can actually practice or demonstrate`
 }
 
@@ -351,6 +393,7 @@ function saveJob(job) {
       status: job.status,
       logs: job.logs,
       topics: job.topics,
+      roadmapTitle: job.roadmapTitle,
       module: job.module,
       progress: job.progress,
       pending: job.pending,
@@ -387,7 +430,7 @@ function getJob(id) {
   return jobs.get(id) || loadJob(id)
 }
 
-function createJob(topic, config) {
+function createJob(topic, config, mode = 'module') {
   if (jobs.size >= MAX_JOBS) {
     const oldest = jobs.keys().next().value
     if (oldest) {
@@ -399,10 +442,12 @@ function createJob(topic, config) {
     id: crypto.randomUUID(),
     topic,
     config,
+    mode,
     status: 'running',
     logs: [],
     topics: [],
-    module: { subject: topic, mainTopics: [] },
+    roadmapTitle: '',
+    module: { subject: topic, mode, mainTopics: [] },
     progress: { done: 0, total: 0 },
     pending: [],
     errors: {},
@@ -440,10 +485,11 @@ async function runJob(job) {
           ...job.config,
           retries: 5,
           onRetry: (a, t, why) => emit(job, { type: 'status', message: `Main topics call rate-limited — retrying (${a}/${t})… ${why}` }),
-          messages: [{ role: 'user', content: mainTopicsPrompt(job.topic) }]
+          messages: [{ role: 'user', content: mainTopicsPrompt(job.topic, job.mode) }]
         })
         const topics = Array.isArray(data.topics) ? data.topics.map(String).map(s => s.trim()).filter(Boolean) : []
         if (topics.length === 0) throw new Error('AI returned no topics. Check your endpoint and try again.')
+        if (typeof data.title === 'string' && data.title.trim()) job.roadmapTitle = data.title.trim()
         job.topics = topics
         job.pending = topics.map((title, index) => ({ title, index }))
         job.progress = { done: 0, total: topics.length }
@@ -470,7 +516,7 @@ async function runJob(job) {
             ...job.config,
             retries: 5,
             onRetry: (a, t, why) => emit(job, { type: 'status', message: `Rate-limited on "${title}" — retrying (${a}/${t})… ${why}` }),
-            messages: [{ role: 'user', content: subtopicsPrompt(title, job.topic) }]
+            messages: [{ role: 'user', content: subtopicsPrompt(title, job.topic, job.mode) }]
           })
           const subtopics = Array.isArray(subData.subtopics) ? subData.subtopics : []
           const cleaned = subtopics
@@ -512,6 +558,16 @@ async function runJob(job) {
     }
     job.pending = []
 
+    if (job.mode === 'roadmap' && !job.module.mainTopics.some((t) => t.title === 'Roadmap')) {
+      const roadmapItem = job.roadmapTitle || `${job.topic} Roadmap`
+      job.module.mainTopics.unshift({
+        index: -1,
+        title: 'Roadmap',
+        subtopics: [{ title: 'Overview', items: [roadmapItem] }]
+      })
+      job.roadmapTitle = roadmapItem
+    }
+
     job.warnings = job.module.mainTopics.filter((t) => t.error).map((t) => `${t.title}: ${t.error}`)
     job.status = 'done'
     emit(job, { type: 'done', module: job.module, warnings: job.warnings })
@@ -552,15 +608,27 @@ function moduleDir(slug) {
 
 function countModuleItems(module) {
   if (!module?.mainTopics) return 0
-  return module.mainTopics.reduce((a, t) => a + t.subtopics.reduce((b, s) => b + s.items.length, 0), 0)
+  return module.mainTopics
+    .filter((t) => t.title !== 'Roadmap')
+    .reduce((a, t) => a + t.subtopics.reduce((b, s) => b + s.items.length, 0), 0)
 }
 
-function generateMarkdown(module, notes) {
+function generateMarkdown(module, notes, progress) {
   const lines = []
   lines.push(`# ${module.subject}`)
   lines.push('')
   lines.push(`> Generated by Learning Agent at ${new Date().toLocaleString()}`)
   lines.push('')
+  if (progress) {
+    const keys = Object.keys(progress || {})
+    const done = keys.filter((k) => progress[k] === 'done').length
+    const started = keys.filter((k) => progress[k] === 'in-progress').length
+    const total = countModuleItems(module)
+    if (total > 0) {
+      lines.push(`**Progress:** ${done}/${total} lessons done (${started} in progress)`)
+      lines.push('')
+    }
+  }
   ;[...module.mainTopics].sort((a, b) => (a.index ?? 0) - (b.index ?? 0)).forEach((main, mi) => {
     lines.push(`## ${mi + 1}. ${main.title}`)
     lines.push('')
@@ -568,8 +636,10 @@ function generateMarkdown(module, notes) {
       lines.push(`### ${mi + 1}.${si + 1} ${sub.title}`)
       lines.push('')
       sub.items.forEach((item, ii) => {
-        lines.push(`**${mi + 1}.${si + 1}.${ii + 1}. ${item}**`)
-        const note = notes?.[`${main.title}::${sub.title}::${item}`]
+        const key = `${main.title}::${sub.title}::${item}`
+        const mark = progress?.[key] === 'done' ? '[x]' : progress?.[key] === 'in-progress' ? '[/]' : '[ ]'
+        lines.push(`- ${mark} **${mi + 1}.${si + 1}.${ii + 1}. ${item}**`)
+        const note = notes?.[key]
         if (note) {
           lines.push('')
           lines.push(note.summary || '')
@@ -617,17 +687,18 @@ function loadModuleRecord(slug) {
   }
 }
 
-function saveModuleRecord({ subject, module, notes, warnings, markdown }) {
+function saveModuleRecord({ subject, module, notes, warnings, progress, markdown }) {
   const slug = slugify(subject)
   fs.mkdirSync(moduleDir(slug), { recursive: true })
-  const record = { subject, slug, module, notes: notes || {}, warnings: warnings || [], savedAt: Date.now() }
+  const record = { subject, slug, module, notes: notes || {}, warnings: warnings || [], progress: progress || {}, savedAt: Date.now() }
   fs.writeFileSync(path.join(moduleDir(slug), 'module.json'), JSON.stringify(record))
-  fs.writeFileSync(path.join(moduleDir(slug), 'module.md'), markdown || generateMarkdown(module, notes || {}))
+  fs.writeFileSync(path.join(moduleDir(slug), 'module.md'), markdown || generateMarkdown(module, notes || {}, progress))
   const index = readModuleIndex()
   const idx = index.findIndex((e) => e.slug === slug)
   const entry = {
     subject,
     slug,
+    mode: module.mode || 'module',
     savedAt: record.savedAt,
     items: countModuleItems(module),
     notesCount: Object.keys(notes || {}).length
@@ -648,6 +719,7 @@ function rebuildModuleIndex() {
       .map((rec) => ({
         subject: rec.subject,
         slug: rec.slug,
+        mode: rec.module?.mode || 'module',
         savedAt: rec.savedAt,
         items: countModuleItems(rec.module),
         notesCount: Object.keys(rec.notes || {}).length
@@ -752,10 +824,10 @@ app.get('/api/modules/:slug/raw', (req, res) => {
 })
 
 app.post('/api/modules/save', (req, res) => {
-  const { subject, module, notes, warnings, markdown } = req.body || {}
+  const { subject, module, notes, warnings, progress, markdown } = req.body || {}
   if (!subject || !module) return res.status(400).json({ error: 'Missing subject or module' })
   try {
-    const record = saveModuleRecord({ subject, module, notes: notes || {}, warnings: warnings || [], markdown })
+    const record = saveModuleRecord({ subject, module, notes: notes || {}, warnings: warnings || [], progress: progress || {}, markdown })
     res.json({ ok: true, slug: record.slug, savedAt: record.savedAt })
   } catch (e) {
     res.status(500).json({ error: e.message })
@@ -774,9 +846,9 @@ app.post('/api/ai/chat', async (req, res) => {
 })
 
 app.post('/api/module/generate', (req, res) => {
-  const { topic, config } = req.body || {}
+  const { topic, config, mode } = req.body || {}
   if (!topic || !config) return res.status(400).json({ error: 'Missing topic or AI config' })
-  const job = createJob(topic, config)
+  const job = createJob(topic, config, mode === 'roadmap' ? 'roadmap' : 'module')
   runJob(job)
   res.json({ id: job.id })
 })
@@ -860,6 +932,41 @@ app.post('/api/module/note/review', async (req, res) => {
       messages: [{ role: 'user', content: reviewPrompt(item, subtopic, mainTopic, subject, note) }]
     })
     res.json({ note: reviewed })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+app.post('/api/ai/expand', async (req, res) => {
+  const { kind, config, subject, mainTopic, subtopic } = req.body || {}
+  if (!kind || !config) return res.status(400).json({ error: 'Missing kind or config' })
+  try {
+    if (kind === 'subtopics') {
+      if (!mainTopic) return res.status(400).json({ error: 'Missing mainTopic' })
+      const data = await callJson({
+        ...config,
+        retries: 3,
+        messages: [{ role: 'user', content: subtopicsPrompt(mainTopic, subject || '') }]
+      })
+      const subtopics = (Array.isArray(data.subtopics) ? data.subtopics : [])
+        .map((s) => ({
+          title: String(s.title || '').trim(),
+          items: (Array.isArray(s.items) ? s.items : []).map(String).map((x) => x.trim()).filter(Boolean)
+        }))
+        .filter((s) => s.title && s.items.length)
+      res.json({ subtopics })
+    } else if (kind === 'items') {
+      if (!mainTopic || !subtopic) return res.status(400).json({ error: 'Missing mainTopic or subtopic' })
+      const data = await callJson({
+        ...config,
+        retries: 3,
+        messages: [{ role: 'user', content: itemsPrompt(mainTopic, subtopic, subject || '') }]
+      })
+      const items = (Array.isArray(data.items) ? data.items : []).map(String).map((x) => x.trim()).filter(Boolean)
+      res.json({ items })
+    } else {
+      res.status(400).json({ error: `Unknown kind: ${kind}` })
+    }
   } catch (e) {
     res.status(500).json({ error: e.message })
   }

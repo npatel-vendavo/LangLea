@@ -63,6 +63,18 @@ An AI-powered learning module generator that acts as a learning agent. Tell it w
 - The alternative is shown side by side; you can **Replace current note**, discard it, or regenerate it.
 - This is handy for cross-checking accuracy and for spreading load across endpoints to avoid rate limits.
 
+### Manual editing and AI expansion
+- Build your own curriculum: add a **main topic** (course), a **subtopic**, or an **item** (lesson) directly from the topics panel — no regeneration needed.
+- **Expand with AI** on any main topic generates its subtopics; on any subtopic it generates its learning items. Everything merges into the existing tree (no duplicates), and you can then generate study notes for the new items.
+- Works alongside AI-generated modules, so you can grow a module beyond what the initial generation produced.
+
+### Goal roadmaps with progress tracking
+- Choose **Goal roadmap** mode in the setup screen (instead of **Learning module**) and enter an objective like "Become a frontend engineer".
+- The AI identifies everything you need to learn for that goal (e.g. HTML/CSS, JavaScript, React, Next.js, state management, GraphQL, testing, tooling, deployment), ordered by dependency, and creates a course for each — full modules with subtopics and lessons.
+- A dedicated **Roadmap** section is added at the top of the tree containing a single entry item (e.g. "Frontend Engineering Roadmap"). Click it to open the **roadmap overview** page listing every course with its own progress bar; click any course to jump straight into it.
+- Lessons are populated with readable study notes (per-lesson or all at once), and the roadmap is saved as a `.md` file for download.
+- **Track your progress** while following the path: every lesson has a status cycle (not started → in progress → done). An overall progress bar shows completion, progress is persisted (localStorage + server files), and the exported markdown renders real checkboxes (`- [x]`) plus a progress summary.
+
 ## Architecture
 
 Monorepo using npm workspaces with two packages:
@@ -74,7 +86,7 @@ Monorepo using npm workspaces with two packages:
   - Serves the built client in production.
 - `client/` — Vite + React frontend (`client/src/`)
   - `App.jsx` — app state machine, generation job subscription, persistence, chat.
-  - `components/` — `Dashboard`, `SetupForm`, `GenerationProgress`, `TopicsPanel`, `ContentPanel`, `ChatPanel`, `HistoryModal`, `SettingsModal`, `ModelSelector`, `ProfileManager`.
+  - `components/` — `Dashboard`, `SetupForm`, `GenerationProgress`, `TopicsPanel`, `ContentPanel`, `ChatPanel`, `HistoryModal`, `SettingsModal`, `ModelSelector`, `ProfileManager`, `RoadmapView`.
   - `lib/` — `export.js` (markdown/JSON export), `history.js` (chat history), `modules.js` (module cache), `storage.js` (endpoint profiles + per-purpose selection).
 
 ### API endpoints
@@ -85,12 +97,13 @@ Monorepo using npm workspaces with two packages:
 | GET | `/api/logs` | List AI interaction log entries (metadata) |
 | GET | `/api/logs/:id` | Full AI interaction log entry |
 | POST | `/api/ai/discover-models` | Discover endpoint models (Ollama `/api/tags` or OpenAI-compatible `/models`) |
-| POST | `/api/module/generate` | Start a generation job, returns job id |
+| POST | `/api/module/generate` | Start a generation job (`mode: 'module'` or `'roadmap'`), returns job id |
 | GET | `/api/module/generate/:id/events` | SSE stream of job progress (snapshot + live events) |
 | POST | `/api/module/:id/config` | Attach/refresh the AI config for a job |
 | POST | `/api/module/:id/resume` | Retry failed sections of a finished job |
 | POST | `/api/module/note` | Generate a deep-dive study note for an item |
 | POST | `/api/module/note/review` | Generate an alternative study note using a (different) endpoint |
+| POST | `/api/ai/expand` | Expand a main topic into subtopics, or a subtopic into items (`kind: 'subtopics'`/`'items'`) |
 | POST | `/api/ai/chat` | Chat with the AI using current module context |
 | GET | `/api/modules` | List saved modules |
 | GET | `/api/modules/latest` | Full data of the most recently saved module |
