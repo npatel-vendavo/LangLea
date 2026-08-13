@@ -823,6 +823,18 @@ app.get('/api/modules/:slug/raw', (req, res) => {
   res.sendFile(file)
 })
 
+app.delete('/api/modules/:slug', (req, res) => {
+  const slug = slugify(req.params.slug)
+  try {
+    fs.rmSync(moduleDir(slug), { recursive: true, force: true })
+    const index = readModuleIndex().filter((e) => e.slug !== slug)
+    writeModuleIndex(index)
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
 app.post('/api/modules/save', (req, res) => {
   const { subject, module, notes, warnings, progress, markdown } = req.body || {}
   if (!subject || !module) return res.status(400).json({ error: 'Missing subject or module' })

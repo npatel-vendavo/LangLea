@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { loadModules, countItems } from '../lib/modules.js'
+import { loadModules, countItems, removeModule } from '../lib/modules.js'
 import { moduleToMarkdown } from '../lib/export.js'
 
 function downloadMarkdown(m) {
@@ -20,6 +20,16 @@ function downloadMarkdown(m) {
 export default function Dashboard({ currentSubject, onOpen, onCreate, onHistory, onSettings, onLogs }) {
   const [items, setItems] = useState([])
   const [loaded, setLoaded] = useState(false)
+
+  const handleDelete = async (m) => {
+    const label = m.mode === 'roadmap' || m.module?.mode === 'roadmap' ? 'roadmap' : 'module'
+    if (!window.confirm(`Delete this ${label} "${m.subject}"?\n\nThis permanently removes it and all of its study notes.`)) return
+    removeModule(m.subject)
+    if (m.slug) {
+      try { await fetch(`/api/modules/${encodeURIComponent(m.slug)}`, { method: 'DELETE' }) } catch { /* server unavailable */ }
+    }
+    setItems((prev) => prev.filter((x) => x.subject !== m.subject))
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -81,6 +91,7 @@ export default function Dashboard({ currentSubject, onOpen, onCreate, onHistory,
                 </button>
                 <div className="dash-card-actions">
                   <button className="btn tiny" onClick={() => downloadMarkdown(m)}>Download .md</button>
+                  <button className="btn tiny danger" onClick={() => handleDelete(m)}>Delete</button>
                 </div>
               </div>
             )

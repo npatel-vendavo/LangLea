@@ -33,6 +33,19 @@ export function saveModule({ subject, module, notes, warnings, progress }) {
   }
 }
 
+export function removeModule(subject) {
+  try {
+    const list = loadModules().filter((m) => m.subject !== subject)
+    localStorage.setItem(MODULES_KEY, JSON.stringify(list))
+    const last = getLastModule()
+    if (last && last.subject === subject) localStorage.removeItem(LAST_KEY)
+    return true
+  } catch (e) {
+    console.warn('Could not remove module from localStorage', e)
+    return false
+  }
+}
+
 export function countItems(module) {
   if (!module?.mainTopics) return 0
   return module.mainTopics.reduce(

@@ -29,6 +29,8 @@ export default function App() {
   const [subject, setSubject] = useState(() => lastModule?.subject ?? '')
   const [logs, setLogs] = useState([])
   const [progress, setProgress] = useState({ done: 0, total: 0 })
+  const [topics, setTopics] = useState([])
+  const [genMode, setGenMode] = useState(() => lastModule?.module?.mode ?? 'module')
   const [module, setModule] = useState(() => lastModule?.module ?? null)
   const [warnings, setWarnings] = useState(() => lastModule?.warnings ?? [])
   const [fatalError, setFatalError] = useState('')
@@ -141,6 +143,8 @@ export default function App() {
     setFatalError('')
     setLogs([])
     setProgress({ done: entry.module.mainTopics.length, total: entry.module.mainTopics.length })
+    setTopics([])
+    setGenMode(entry.module?.mode || 'module')
     setSelected(null)
     setAltNote(null)
     setAltError('')
@@ -193,6 +197,8 @@ export default function App() {
     setFatalError('')
     setLogs([])
     setProgress({ done: 0, total: 0 })
+    setTopics([])
+    setGenMode(mode)
     setSelected(null)
     setAltNote(null)
     setSession(ensureSession(topic))
@@ -299,6 +305,8 @@ export default function App() {
         setLogs(j.logs || [])
         setProgress({ done: j.progress?.done ?? 0, total: j.progress?.total ?? 0 })
         if (j.module) setModule(j.module)
+        if (j.topics?.length) setTopics(j.topics)
+        if (j.module?.mode) setGenMode(j.module.mode)
         setWarnings(j.warnings || [])
         if (j.fatalError) {
           setFatalError(j.fatalError)
@@ -315,6 +323,7 @@ export default function App() {
         setLogs((l) => [...l, { type: 'status', message: ev.message }])
         break
       case 'topics':
+        setTopics(ev.topics)
         setLogs((l) => [...l, { type: 'topics', topics: ev.topics }])
         break
       case 'progress':
@@ -333,6 +342,7 @@ export default function App() {
       }
       case 'done':
         setModule(ev.module)
+        if (ev.module?.mode) setGenMode(ev.module.mode)
         setWarnings(ev.warnings || [])
         setSession(ensureSession(subjectRef.current))
         setPhase('module')
@@ -654,7 +664,7 @@ export default function App() {
 
           {phase === 'generating' && (
             <>
-              <GenerationProgress logs={logs} progress={progress} />
+              <GenerationProgress logs={logs} progress={progress} topics={topics} module={module} mode={genMode} />
               <button className="btn ghost center" onClick={() => { stopStream(); setPhase('dashboard') }}>Cancel</button>
             </>
           )}

@@ -75,6 +75,13 @@ An AI-powered learning module generator that acts as a learning agent. Tell it w
 - Lessons are populated with readable study notes (per-lesson or all at once), and the roadmap is saved as a `.md` file for download.
 - **Track your progress** while following the path: every lesson has a status cycle (not started → in progress → done). An overall progress bar shows completion, progress is persisted (localStorage + server files), and the exported markdown renders real checkboxes (`- [x]`) plus a progress summary.
 
+### Live generation progress
+- While a module or roadmap is being generated you see a **live tree** of every main topic / course the AI plans to create, updating in real time: pending (`○`) → working (`⟳`) → done (`✓`), with each section's subtopics (and item counts) appearing as they are expanded, plus the rate-limit retry status messages below.
+- Failed sections are flagged inline so you know exactly which topics still need attention.
+
+### Manage saved modules
+- Every saved module and roadmap appears on the dashboard. Use **Download .md** to export it, or **Delete** (with confirmation) to permanently remove it — both from the app storage and the server files.
+
 ## Architecture
 
 Monorepo using npm workspaces with two packages:
@@ -110,6 +117,7 @@ Monorepo using npm workspaces with two packages:
 | GET | `/api/modules/:slug` | Full data of a saved module |
 | GET | `/api/modules/:slug/raw` | Download the saved `.md` file |
 | POST | `/api/modules/save` | Save/update a module as `.md` + `.json` |
+| DELETE | `/api/modules/:slug` | Permanently delete a saved module |
 
 ### Job/SSE events
 
