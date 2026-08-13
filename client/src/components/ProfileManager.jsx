@@ -4,6 +4,7 @@ import { createProfile } from '../lib/storage.js'
 export default function ProfileManager({ profiles, onChange }) {
   const [fetching, setFetching] = useState({})
   const [fetchError, setFetchError] = useState({})
+  const [fetchNote, setFetchNote] = useState({})
 
   const updateProfile = (id, patch) => onChange(profiles.map((p) => (p.id === id ? { ...p, ...patch } : p)))
   const addProfile = () => onChange([...profiles, createProfile({ name: `Endpoint ${profiles.length + 1}` })])
@@ -27,6 +28,7 @@ export default function ProfileManager({ profiles, onChange }) {
     if (!p || !p.baseUrl.trim() || fetching[pid]) return
     setFetching((s) => ({ ...s, [pid]: true }))
     setFetchError((s) => ({ ...s, [pid]: '' }))
+    setFetchNote((s) => ({ ...s, [pid]: '' }))
     try {
       const res = await fetch('/api/ai/discover-models', {
         method: 'POST',
@@ -37,7 +39,12 @@ export default function ProfileManager({ profiles, onChange }) {
       if (!res.ok) throw new Error(data.error || 'Failed to fetch models')
       if (!data.models.length) throw new Error('No models found at this endpoint')
       const merged = [...new Set([...(p.models || []).filter(Boolean), ...data.models])]
-      onChange(list.map((x) => (x.id === pid ? { ...x, models: merged } : x)))
+      const fixedBase = data.source === 'ollama' && data.ollamaBase && p.baseUrl.trim() !== data.ollamaBase
+      onChange(list.map((x) => (x.id === pid ? { ...x, models: merged, ...(fixedBase ? { baseUrl: data.ollamaBase } : {}) } : x)))
+      if (fixedBase) {
+        setFetchNote((s) => ({ ...s, [pid]: `Ollama detected — base URL corrected to ${data.ollamaBase}` }))
+      }
+      return
     } catch (e) {
       setFetchError((s) => ({ ...s, [pid]: e.message }))
     } finally {
@@ -107,6 +114,7 @@ export default function ProfileManager({ profiles, onChange }) {
               ))}
             </div>
             {fetchError[p.id] && <p className="hint fetch-error">{fetchError[p.id]}</p>}
+            {fetchNote[p.id] && <p className="hint fetch-note">{fetchNote[p.id]}</p>}
             <div>
               <button className="btn tiny" type="button" onClick={() => addModel(p.id)}>Add model</button>
             </div>

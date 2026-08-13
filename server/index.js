@@ -35,6 +35,26 @@ function normalizeBaseUrl(baseUrl) {
   return url.replace(/\/+$/, '')
 }
 
+/* Ollama serves its OpenAI-compatible API at /v1, not /api or the host root.
+   Derive the bare host from a base URL that may end in /v1, /api, or nothing. */
+function ollamaHost(baseUrl) {
+  return normalizeBaseUrl(baseUrl).replace(/\/v1$|\/api$/i, '')
+}
+
+/* Build the chat completions URL. Corrects common Ollama mistakes so that
+   http://host:11434, http://host:11434/api and http://host:11434/v1 all hit
+   http://host:11434/v1/chat/completions; OpenAI-compatible bases are unchanged. */
+function buildCompletionsUrl(baseUrl) {
+  let url = (baseUrl || 'https://api.openai.com/v1').trim()
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url
+  url = url.replace(/\/+$/, '')
+  const path = url.replace(/^https?:\/\/[^/]+/, '').replace(/\/+$/, '').toLowerCase()
+  if (path === '' || path === '/api') {
+    return `${url.replace(/\/api$/i, '')}/v1/chat/completions`
+  }
+  return `${url}/chat/completions`
+}
+
 function classifyError(status, text) {
   return (
     status === 429 ||
@@ -45,7 +65,7 @@ function classifyError(status, text) {
 
 async function callChat({ baseUrl, apiKey, model, messages, temperature = 0.3, maxTokens = 4000, retries = 5, onRetry, parseJson = false }) {
   if (!model) throw new Error('Missing AI model. Provide it in Settings.')
-  const url = `${normalizeBaseUrl(baseUrl)}/chat/completions`
+  const url = buildCompletionsUrl(baseUrl)
   const started = Date.now()
   const entry = {
     time: new Date().toISOString(),
@@ -760,10 +780,11 @@ app.post('/api/ai/discover-models', async (req, res) => {
   const base = normalizeBaseUrl(baseUrl)
   const models = []
   let source = null
+  let ollamaBase = null
 
-  const ollamaHost = base.replace(/\/v1$/, '')
+  const hostRoot = ollamaHost(baseUrl)
   try {
-    const r = await fetch(`${ollamaHost}/api/tags`, { signal: AbortSignal.timeout(5000) })
+    const r = await fetch(`${hostRoot}/api/tags`, { signal: AbortSignal.timeout(5000) })
     if (r.ok) {
       const data = await r.json()
       for (const m of data.models || []) {
@@ -771,6 +792,7 @@ app.post('/api/ai/discover-models', async (req, res) => {
         if (name) models.push(name)
       }
       source = 'ollama'
+      ollamaBase = `${hostRoot}/v1`
     }
   } catch { /* not ollama */ }
 
@@ -790,7 +812,7 @@ app.post('/api/ai/discover-models', async (req, res) => {
     } catch { /* unreachable */ }
   }
 
-  res.json({ models, source, base })
+  res.json({ models, source, base, ...(ollamaBase ? { ollamaBase } : {}) })
 })
 
 /* ----- saved modules (.md files) ----- */

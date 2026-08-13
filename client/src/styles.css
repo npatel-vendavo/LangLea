@@ -581,6 +581,7 @@ input:focus, textarea:focus { border-color: var(--accent); }
 
 .field-label-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .fetch-error { color: var(--yellow); }
+.fetch-note { color: var(--green); }
 .endpoint-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 .settings-section { display: flex; flex-direction: column; gap: 10px; }
