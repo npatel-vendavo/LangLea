@@ -11,7 +11,7 @@ app.use(express.json({ limit: '2mb' }))
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const CLIENT_DIST = path.join(__dirname, '..', 'client', 'dist')
-const PORT = process.env.PORT || 4000
+const PORT = process.env.PORT || 4001
 const JOB_DIR = process.env.JOB_DIR || path.join(os.tmpdir(), 'learning-agent-jobs')
 fs.mkdirSync(JOB_DIR, { recursive: true })
 
@@ -62,6 +62,15 @@ async function callChat({ baseUrl, apiKey, model, messages, temperature = 0.3, m
     parsed: null,
     error: null
   }
+
+  // Console activity logging
+  const logActivity = (stage, details = {}) => {
+    const elapsed = Date.now() - started
+    console.log(`[AI:${stage}] ${model} | ${elapsed}ms | ${JSON.stringify(details)}`)
+  }
+
+  logActivity('REQUEST_START', { url, parseJson, messageCount: messages.length, maxTokens, temperature })
+
   const finish = (patch) => {
     Object.assign(entry, patch, { durationMs: Date.now() - started })
     logInteraction(entry)
@@ -70,7 +79,9 @@ async function callChat({ baseUrl, apiKey, model, messages, temperature = 0.3, m
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     let res
+    const attemptStart = Date.now()
     try {
+      logActivity('FETCH_START', { attempt, retries })
       res = await fetch(url, {
         method: 'POST',
         headers: {
@@ -79,16 +90,21 @@ async function callChat({ baseUrl, apiKey, model, messages, temperature = 0.3, m
         },
         body: JSON.stringify({ model, messages, temperature, max_tokens: maxTokens })
       })
+      logActivity('FETCH_RESPONSE', { attempt, status: res.status, durationMs: Date.now() - attemptStart })
     } catch (e) {
+      const durationMs = Date.now() - attemptStart
+      logActivity('FETCH_ERROR', { attempt, error: e.message, durationMs })
       entry.attempts.push({ attempt, error: e.message })
       if (attempt < retries) {
         onRetry?.(attempt, retries, `network error: ${e.message}`)
+        logActivity('RETRY_WAIT', { attempt, delayMs: delay, reason: `network error: ${e.message}` })
         await sleep(delay)
         delay = Math.min(delay * 2, 20000) + Math.random() * 500
         continue
       }
       const err = new Error(`Could not reach AI endpoint ${url}: ${e.message}`)
       finish({ error: err.message })
+      logActivity('REQUEST_FAILED', { error: err.message, totalDurationMs: Date.now() - started })
       throw err
     }
 
@@ -114,19 +130,23 @@ async function callChat({ baseUrl, apiKey, model, messages, temperature = 0.3, m
 
       if (!parseJson) {
         finish({ parsed: null })
+        logActivity('REQUEST_SUCCESS', { totalDurationMs: Date.now() - started, contentLength: content.length })
         return content
       }
 
       try {
         extractJson(content)
         finish({ parsed: true })
+        logActivity('REQUEST_SUCCESS_JSON', { totalDurationMs: Date.now() - started, contentLength: content.length })
         return content
       } catch (e) {
         entry.parsed = false
         entry.attempts[entry.attempts.length - 1].parseError = e.message
         const parseErr = `AI returned unparseable output (${e.message})`
+        logActivity('PARSE_ERROR', { attempt, error: e.message })
         if (attempt < retries) {
           onRetry?.(attempt, retries, parseErr)
+          logActivity('RETRY_WAIT', { attempt, delayMs: delay, reason: parseErr })
           await sleep(delay)
           delay = Math.min(delay * 2, 20000) + Math.random() * 500
           continue
@@ -134,6 +154,7 @@ async function callChat({ baseUrl, apiKey, model, messages, temperature = 0.3, m
         const err = new Error(parseErr)
         err.retryable = true
         finish({ error: parseErr })
+        logActivity('REQUEST_FAILED', { error: parseErr, totalDurationMs: Date.now() - started })
         throw err
       }
     }
@@ -141,10 +162,12 @@ async function callChat({ baseUrl, apiKey, model, messages, temperature = 0.3, m
     const retryable = classifyError(res.status, text)
     const errText = res.ok ? 'AI returned no content' : text
     entry.attempts.push({ attempt, status: res.status, ok: false, retryable, error: errText.slice(0, 500) })
+    logActivity('REQUEST_ERROR', { attempt, status: res.status, retryable, error: errText.slice(0, 200) })
     if (retryable && attempt < retries) {
       const retryAfter = parseInt(res.headers.get('retry-after') || '', 10)
       if (retryAfter > 0) delay = retryAfter * 1000
       onRetry?.(attempt, retries, `HTTP ${res.status}: ${text.slice(0, 200)}`)
+      logActivity('RETRY_WAIT', { attempt, delayMs: delay, reason: `HTTP ${res.status}: ${text.slice(0, 100)}` })
       await sleep(delay)
       delay = Math.min(delay * 2, 20000) + Math.random() * 500
       continue
@@ -154,11 +177,13 @@ async function callChat({ baseUrl, apiKey, model, messages, temperature = 0.3, m
     const err = new Error(errMsg)
     err.retryable = retryable
     finish({ error: errMsg })
+    logActivity('REQUEST_FAILED', { error: errMsg, totalDurationMs: Date.now() - started })
     throw err
   }
 
   const err = new Error('AI request failed after exhausting retries')
   finish({ error: err.message })
+  logActivity('REQUEST_FAILED', { error: err.message, totalDurationMs: Date.now() - started })
   throw err
 }
 
@@ -180,64 +205,108 @@ async function callJson(opts) {
 /* ------------------------------------------------------------------ */
 
 function mainTopicsPrompt(topic) {
-  return `You are a knowledgeable learning agent. A student wants to learn: "${topic}".
+  return `You are an expert curriculum designer creating a comprehensive learning module. A student wants to master: "${topic}".
 
-List the main topics that a complete learning module on this subject should cover, ordered from fundamentals to advanced.
+Design the MAIN TOPICS (modules/chapters) for a complete, structured learning path that takes a learner from absolute beginner to confident practitioner.
 
 Return ONLY valid JSON in this exact shape (no markdown, no extra text):
 {
   "topics": ["topic 1", "topic 2", "..."]
 }
 
-Include between 6 and 10 main topics. Be comprehensive and specific.`
+Requirements:
+- Include 7-10 main topics (not 6, aim for completeness)
+- Order strictly from fundamentals → intermediate → advanced → specialized/applied
+- Each topic title must be descriptive and specific (e.g., not just "Variables" but "Variables, Data Types, and Type Systems")
+- Cover the full breadth: core concepts, patterns/practices, tools/ecosystem, real-world application, and emerging topics
+- Topics should be mutually exclusive but collectively exhaustive for the subject`
 }
 
 function subtopicsPrompt(mainTopic, subject) {
-  return `You are a knowledgeable learning agent building a learning module for the subject "${subject}".
+  return `You are an expert curriculum designer building a detailed learning module for "${subject}".
 
-For the main topic "${mainTopic}", list the subtopics (learning units) a student must cover, and under each subtopic give concrete learning items (specific concepts, skills, or knowledge to learn).
+For the main topic "${mainTopic}", create a comprehensive breakdown of SUBTOPICS and LEARNING ITEMS that a student must master.
 
 Return ONLY valid JSON in this exact shape (no markdown, no extra text):
 {
   "subtopics": [
-    { "title": "subtopic title", "items": ["specific item 1", "specific item 2", "..."] }
+    { "title": "descriptive subtopic title", "items": ["specific learning item 1", "specific learning item 2", "..."] }
   ]
 }
 
-Include 4 to 7 subtopics, and 2 to 4 items under each. Items must be concrete, actionable, and specific.`
+Requirements:
+- Create 5-7 subtopics per main topic (not just 4)
+- Each subtopic title must be descriptive and self-contained (e.g., not "Basics" but "Fundamental Syntax and Core Constructs")
+- Provide 3-5 concrete learning items per subtopic (not just 2-4)
+- Items must be specific, actionable, and measurable (e.g., not "Understand loops" but "Write for-loops, while-loops, and loop control statements (break/continue) with proper exit conditions")
+- Items should cover: key concepts/definitions, syntax/patterns, common pitfalls, best practices, and practical applications
+- Progress logically within the main topic: foundations → core techniques → patterns/idioms → advanced nuances → practical application
+- Avoid generic filler; every item should represent something a learner can actually practice or demonstrate`
 }
 
 function deepDivePrompt(item, subtopic, mainTopic, subject) {
-  return `You are a knowledgeable learning agent. A student is learning "${subject}" (module: "${mainTopic}", section: "${subtopic}").
+  return `You are an expert tutor writing a comprehensive study note for a learner. The student is studying "${subject}" → "${mainTopic}" → "${subtopic}".
 
-Write a concise study note for the learning item: "${item}".
+Create a detailed study note for the specific learning item: "${item}".
 
 Return ONLY valid JSON in this exact shape (no markdown, no extra text):
 {
-  "summary": "2-4 sentence plain-language explanation of the concept",
-  "keyPoints": ["key point 1", "key point 2", "..."],
-  "learnByDoing": "one concrete hands-on exercise the student can do to practice it",
-    "resources": ["1-2 book/chapter or link references a learner can use"]
-  }`
+  "summary": "4-6 sentence thorough explanation covering what it is, why it matters, how it works, and when to use it. Include a concrete example or analogy.",
+  "keyPoints": [
+    "Essential concept/definition (1-2 items)",
+    "Critical syntax, patterns, or rules (1-2 items)",
+    "Common mistakes, edge cases, or gotchas (1-2 items)",
+    "Best practices or pro tips (1-2 items)",
+    "How it connects to related concepts (1 item)"
+  ],
+  "learnByDoing": "A specific, hands-on exercise with clear steps and success criteria. Example: 'Create a function that takes an array and returns a new array with only even numbers, using filter(). Test with [1,2,3,4,5,6]. Expected output: [2,4,6].'",
+  "resources": [
+    "Primary authoritative reference (official docs, spec, or canonical book chapter with section)",
+    "Supplementary practical guide, tutorial, or deep-dive article with specific URL or title"
+  ]
+}
+
+Requirements:
+- Summary: 4-6 sentences minimum. Make it substantial enough to stand alone as a reference.
+- Key points: 5-7 items covering concepts, syntax, pitfalls, best practices, and connections.
+- Exercise: Must be concrete, runnable/verifiable, and directly practice the item.
+- Resources: 2 specific references with enough detail to find them (title + section/chapter, or full URL).`
 }
 
 function reviewPrompt(item, subtopic, mainTopic, subject, note) {
-  return `You are a knowledgeable learning agent. A student is learning "${subject}" (module: "${mainTopic}", section: "${subtopic}").
+  return `You are an expert tutor reviewing and improving a study note. The student is learning "${subject}" → "${mainTopic}" → "${subtopic}".
 
-A different AI assistant wrote this study note for the learning item: "${item}".
+A different AI assistant wrote this study note for: "${item}".
 
-NOTE:
+ORIGINAL NOTE:
 ${JSON.stringify(note, null, 2)}
 
-Write an improved study note for the same item. Improve clarity, accuracy, and depth, but keep it concise and study-ready. You may reuse good content from the original.
+Write a SIGNIFICANTLY IMPROVED study note. Your version must be more thorough, accurate, and practically useful. Address any gaps, inaccuracies, or oversimplifications in the original.
 
 Return ONLY valid JSON in this exact shape (no markdown, no extra text):
 {
-  "summary": "2-4 sentence plain-language explanation of the concept",
-  "keyPoints": ["key point 1", "key point 2", "..."],
-  "learnByDoing": "one concrete hands-on exercise the student can do to practice it",
-  "resources": ["1-2 book/chapter or link references a learner can use"]
-}`
+  "summary": "5-7 sentence comprehensive explanation: what it is, why it matters, how it works internally, when to use it vs alternatives, a concrete example, and a common misconception clarified.",
+  "keyPoints": [
+    "Precise definition with technical accuracy (1 item)",
+    "Core mechanics / syntax / patterns with nuances (1-2 items)",
+    "Critical edge cases, pitfalls, or anti-patterns to avoid (1-2 items)",
+    "Best practices, idioms, or performance considerations (1-2 items)",
+    "How it relates to / differs from similar concepts (1 item)",
+    "Real-world scenario where this is the right tool (1 item)"
+  ],
+  "learnByDoing": "A multi-step hands-on exercise that builds understanding progressively. Include: (1) a simple starter task, (2) a variation that tests edge cases, (3) a realistic mini-project applying it. Example: '1. Write a function using map() to double array elements. 2. Modify it to handle nested arrays. 3. Build a data pipeline that fetches JSON, transforms it with map/filter/reduce, and outputs a summary report.'",
+  "resources": [
+    "Authoritative primary source (official specification, RFC, or canonical textbook with chapter/section)",
+    "High-quality practical guide or deep-dive (specific article title + URL, or book chapter)",
+    "Reference for advanced/related topic (e.g., design patterns, performance, or ecosystem tooling)"
+  ]
+}
+
+Requirements:
+- Summary: 5-7 sentences. Go deeper than the original.
+- Key points: 6-8 items. Include things the original missed.
+- Exercise: Multi-part, progressive difficulty, realistic.
+- Resources: 3 specific, high-quality references.`
 }
 
 /* ------------------------------------------------------------------ */

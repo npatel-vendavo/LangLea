@@ -112,10 +112,10 @@ Prerequisites: Node.js 18+ (uses built-in `fetch`).
 # Install dependencies (all workspaces)
 npm install
 
-# Development: backend on :4000, Vite client on :5173 (proxies /api to :4000)
+# Development: backend on :4001, Vite client on :5173 (proxies /api to :4001)
 npm run dev
 
-# Production: build client, serve everything from :4000
+# Production: build client, serve everything from :4001
 npm start
 ```
 
@@ -127,7 +127,7 @@ Environment variables (optional):
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `PORT` | `4000` | Backend/server port |
+| `PORT` | `4001` | Backend/server port |
 | `JOB_DIR` | OS temp dir | Where generation job state is persisted |
 | `MODULES_DIR` | `server/data/modules` | Where saved modules (`module.md`, `module.json`) live |
 | `AI_LOG_DIR` | `server/data/ai-logs` | Where AI interaction logs are stored (`<id>.json` + `index.json`) |
