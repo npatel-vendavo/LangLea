@@ -42,10 +42,13 @@ An AI-powered learning module generator that acts as a learning agent. Tell it w
 ### AI endpoint configuration (multiple endpoints, multiple models)
 - Any OpenAI-compatible chat-completions endpoint works (`{baseUrl}/chat/completions`).
 - Manage endpoints in the **Settings** section (open from the dashboard, the setup screen, or the module topbar): add/remove/rename endpoints, and give each endpoint a Base URL, API key, and any number of models.
-- Pick which endpoint + model to use for each purpose:
-  - **Generate with** — used for building modules and study notes (setup screen).
+- **Ollama support**: click **Add Ollama (local)** to create an endpoint at `http://localhost:11434/v1` with no API key. It also works for an Ollama server on another machine on your network (e.g. `http://192.168.1.20:11434/v1`).
+- **Fetch models** auto-discovers the model list for an endpoint — Ollama via `/api/tags`, or OpenAI-compatible via `/models` — and fills in the endpoint's models.
+- Pick which endpoint + model to use for each purpose, in the **Default endpoints** section of Settings:
+  - **Generate content with** — used for building modules and study notes.
   - **Chat with** — used by the AI tutor in the right panel.
-  - **Review with** — used to generate alternative study notes (see below).
+  - **Review notes with** — used to generate alternative study notes (see below).
+- These defaults pre-fill the selectors in the setup screen and workspace panels.
 - API keys are stored only in the user's browser and sent per-request to the backend, never persisted server-side. Selections and endpoint definitions are stored in browser localStorage.
 - Selections stay valid automatically: if an endpoint is renamed or removed, the app re-points each purpose to an existing endpoint/model.
 
@@ -81,6 +84,7 @@ Monorepo using npm workspaces with two packages:
 | GET | `/api/health` | Health check |
 | GET | `/api/logs` | List AI interaction log entries (metadata) |
 | GET | `/api/logs/:id` | Full AI interaction log entry |
+| POST | `/api/ai/discover-models` | Discover endpoint models (Ollama `/api/tags` or OpenAI-compatible `/models`) |
 | POST | `/api/module/generate` | Start a generation job, returns job id |
 | GET | `/api/module/generate/:id/events` | SSE stream of job progress (snapshot + live events) |
 | POST | `/api/module/:id/config` | Attach/refresh the AI config for a job |
@@ -119,7 +123,7 @@ npm run dev
 npm start
 ```
 
-Open the app and either pick a saved module or click **+ New topic**. In the **Settings** section, add at least one OpenAI-compatible endpoint (Base URL, model, and API key — the UI comes with a default "Default" profile pre-loaded). Pick the endpoint to **Generate with**, type the topic you want to learn, and click **Build my learning module**. Chat and review endpoints can be chosen later from the workspace panels.
+Open the app and either pick a saved module or click **+ New topic**. In the **Settings** section, add at least one endpoint — use **Add Ollama (local)** if you run Ollama, or fill in any OpenAI-compatible Base URL, model, and API key. Set the default endpoint to **Generate content with** (or pick it in the setup screen), type the topic you want to learn, and click **Build my learning module**. Chat and review endpoints can be chosen from the workspace panels.
 
 ## Configuration
 

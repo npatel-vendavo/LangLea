@@ -423,6 +423,15 @@ input:focus, textarea:focus { border-color: var(--accent); }
 .model-row { display: flex; gap: 6px; align-items: center; }
 .model-row input { flex: 1; padding: 8px 10px; font-size: 13.5px; }
 
+.field-label-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.fetch-error { color: var(--yellow); }
+.endpoint-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.settings-section { display: flex; flex-direction: column; gap: 10px; }
+.settings-section + .settings-section { padding-top: 14px; border-top: 1px solid var(--border); }
+.default-row { display: flex; flex-direction: column; gap: 5px; }
+.default-row .model-selector { width: 100%; }
+
 .btn.danger { border-color: var(--red); color: var(--red); background: rgba(255, 107, 107, 0.08); }
 
 .chat-selector {

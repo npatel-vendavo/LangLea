@@ -627,6 +627,8 @@ export default function App() {
       {settingsOpen && (
         <SettingsModal
           profiles={profiles}
+          selection={selection}
+          onSelectionChange={updateSelection}
           onProfilesChange={updateProfiles}
           onClose={() => setSettingsOpen(false)}
         />

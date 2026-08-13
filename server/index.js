@@ -680,6 +680,47 @@ app.get('/api/logs/:id', (req, res) => {
   res.json(log)
 })
 
+/* ----- model discovery (Ollama /api/tags, OpenAI-compatible /models) ----- */
+
+app.post('/api/ai/discover-models', async (req, res) => {
+  const { baseUrl, apiKey } = req.body || {}
+  if (!baseUrl) return res.status(400).json({ error: 'Missing baseUrl' })
+  const base = normalizeBaseUrl(baseUrl)
+  const models = []
+  let source = null
+
+  const ollamaHost = base.replace(/\/v1$/, '')
+  try {
+    const r = await fetch(`${ollamaHost}/api/tags`, { signal: AbortSignal.timeout(5000) })
+    if (r.ok) {
+      const data = await r.json()
+      for (const m of data.models || []) {
+        const name = String(m.name || '').replace(/:latest$/, '')
+        if (name) models.push(name)
+      }
+      source = 'ollama'
+    }
+  } catch { /* not ollama */ }
+
+  if (models.length === 0) {
+    try {
+      const r = await fetch(`${base}/models`, {
+        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+        signal: AbortSignal.timeout(5000)
+      })
+      if (r.ok) {
+        const data = await r.json()
+        for (const m of data.data || []) {
+          if (m && m.id) models.push(String(m.id))
+        }
+        source = 'openai'
+      }
+    } catch { /* unreachable */ }
+  }
+
+  res.json({ models, source, base })
+})
+
 /* ----- saved modules (.md files) ----- */
 
 app.get('/api/modules', (_req, res) => {

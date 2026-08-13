@@ -1,6 +1,10 @@
+import { useState } from 'react'
 import { createProfile } from '../lib/storage.js'
 
 export default function ProfileManager({ profiles, onChange }) {
+  const [fetching, setFetching] = useState({})
+  const [fetchError, setFetchError] = useState({})
+
   const updateProfile = (id, patch) => onChange(profiles.map((p) => (p.id === id ? { ...p, ...patch } : p)))
   const addProfile = () => onChange([...profiles, createProfile({ name: `Endpoint ${profiles.length + 1}` })])
   const removeProfile = (id) => onChange(profiles.filter((p) => p.id !== id))
@@ -17,6 +21,36 @@ export default function ProfileManager({ profiles, onChange }) {
   }
 
   const addModel = (pid) => updateProfile(pid, { models: [...profileById(pid).models, ''] })
+
+  const fetchModelsFor = async (list, pid) => {
+    const p = list.find((x) => x.id === pid)
+    if (!p || !p.baseUrl.trim() || fetching[pid]) return
+    setFetching((s) => ({ ...s, [pid]: true }))
+    setFetchError((s) => ({ ...s, [pid]: '' }))
+    try {
+      const res = await fetch('/api/ai/discover-models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ baseUrl: p.baseUrl.trim(), apiKey: p.apiKey })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to fetch models')
+      if (!data.models.length) throw new Error('No models found at this endpoint')
+      const merged = [...new Set([...(p.models || []).filter(Boolean), ...data.models])]
+      onChange(list.map((x) => (x.id === pid ? { ...x, models: merged } : x)))
+    } catch (e) {
+      setFetchError((s) => ({ ...s, [pid]: e.message }))
+    } finally {
+      setFetching((s) => ({ ...s, [pid]: false }))
+    }
+  }
+
+  const addOllama = () => {
+    const prof = createProfile({ name: 'Ollama', baseUrl: 'http://localhost:11434/v1', apiKey: '', models: [] })
+    const next = [...profiles, prof]
+    onChange(next)
+    fetchModelsFor(next, prof.id)
+  }
 
   return (
     <div className="endpoints">
@@ -37,7 +71,7 @@ export default function ProfileManager({ profiles, onChange }) {
             <input
               value={p.baseUrl}
               onChange={(e) => updateProfile(p.id, { baseUrl: e.target.value })}
-              placeholder="https://api.openai.com/v1"
+              placeholder="Ollama: http://localhost:11434/v1 · OpenAI: https://api.openai.com/v1"
             />
           </label>
 
@@ -47,13 +81,23 @@ export default function ProfileManager({ profiles, onChange }) {
               type="password"
               value={p.apiKey}
               onChange={(e) => updateProfile(p.id, { apiKey: e.target.value })}
-              placeholder="sk-..."
+              placeholder="sk-... (leave empty for Ollama)"
               autoComplete="off"
             />
           </label>
 
           <div className="field">
-            <span className="field-label">Models</span>
+            <div className="field-label-row">
+              <span className="field-label">Models</span>
+              <button
+                className="btn tiny"
+                type="button"
+                disabled={fetching[p.id] || !p.baseUrl.trim()}
+                onClick={() => fetchModelsFor(profiles, p.id)}
+              >
+                {fetching[p.id] ? 'Fetching…' : 'Fetch models'}
+              </button>
+            </div>
             <div className="models-list">
               {p.models.map((m, i) => (
                 <div className="model-row" key={i}>
@@ -62,6 +106,7 @@ export default function ProfileManager({ profiles, onChange }) {
                 </div>
               ))}
             </div>
+            {fetchError[p.id] && <p className="hint fetch-error">{fetchError[p.id]}</p>}
             <div>
               <button className="btn tiny" type="button" onClick={() => addModel(p.id)}>Add model</button>
             </div>
@@ -69,12 +114,13 @@ export default function ProfileManager({ profiles, onChange }) {
         </div>
       ))}
 
-      <div>
+      <div className="endpoint-actions">
         <button className="btn" type="button" onClick={addProfile}>Add endpoint</button>
+        <button className="btn" type="button" onClick={addOllama}>Add Ollama (local)</button>
       </div>
 
       <p className="hint">
-        API keys are stored only in your browser and sent to this app's backend, which talks to your endpoints. Keys are never persisted on the server.
+        "Fetch models" auto-detects the model list — Ollama via <code>/api/tags</code> (works on localhost or another machine on your network, e.g. <code>http://192.168.1.20:11434/v1</code>), or OpenAI-compatible via <code>/models</code>. API keys are stored only in your browser and never persisted on the server.
       </p>
     </div>
   )
