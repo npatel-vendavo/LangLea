@@ -637,7 +637,11 @@ export default function App() {
     URL.revokeObjectURL(url)
   }
 
-  /* ---------------- render ---------------- */
+  // Calculate topbar progress
+  const lessonTopics = module?.mainTopics?.filter((t) => t.title !== 'Roadmap') || []
+  const totalItemsCount = lessonTopics.reduce((acc, t) => acc + (t.subtopics || []).reduce((a, s) => a + (s.items || []).length, 0), 0)
+  const doneItemsCount = lessonTopics.reduce((acc, t) => acc + (t.subtopics || []).reduce((a, s) => a + (s.items || []).filter((i) => tracked?.[itemKey(t.title, s.title, i)] === 'done').length, 0), 0)
+  const overallPct = totalItemsCount ? Math.round((doneItemsCount / totalItemsCount) * 100) : 0
 
   return (
     <div className="app">
@@ -649,6 +653,7 @@ export default function App() {
           onHistory={() => setHistoryOpen(true)}
           onSettings={() => setSettingsOpen(true)}
           onLogs={() => setLogsOpen(true)}
+          onStartTopic={(t) => start(t, 'module')}
         />
       )}
 
@@ -685,7 +690,19 @@ export default function App() {
               </button>
               <button className="btn topbar-btn" onClick={() => { stopStream(); setPhase('dashboard') }}>Modules</button>
             </div>
-            <div className="topbar-title">Learning Agent{subject ? <span className="topbar-sub"> · {subject}</span> : ''}</div>
+
+            <div className="topbar-center">
+              <div className="topbar-title">LangLea{subject ? <span className="topbar-sub"> · {subject}</span> : ''}</div>
+              {totalItemsCount > 0 && (
+                <div className="topbar-progress-pill" title={`${doneItemsCount} of ${totalItemsCount} lessons completed`}>
+                  <div className="topbar-progress-bar">
+                    <div className="topbar-progress-fill" style={{ width: `${overallPct}%` }} />
+                  </div>
+                  <span>{overallPct}%</span>
+                </div>
+              )}
+            </div>
+
             <div className="topbar-actions">
               <button className="btn topbar-btn" onClick={() => setLogsOpen(true)} title="AI interaction logs">Logs</button>
               <button className="btn topbar-btn" onClick={() => setSettingsOpen(true)} title="AI endpoints">Settings</button>
@@ -765,6 +782,7 @@ export default function App() {
                   busy={chatBusy}
                   error={chatError}
                   onNewChat={() => setSession(startSession(subject))}
+                  selectedItemName={selected?.item}
                 />
               </aside>
             )}

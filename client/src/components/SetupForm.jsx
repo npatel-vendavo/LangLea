@@ -2,6 +2,23 @@ import { useState } from 'react'
 import ModelSelector from './ModelSelector.jsx'
 import SettingsModal from './SettingsModal.jsx'
 
+const MODULE_SUGGESTIONS = [
+  'Machine Learning & Neural Networks',
+  'System Design & Microservices',
+  'Quantum Computing Basics',
+  'Personal Finance & Investing',
+  'Rust Programming Language',
+  'Data Structures & Algorithms'
+]
+
+const ROADMAP_SUGGESTIONS = [
+  'Become a Frontend Engineer',
+  'Full-Stack Web Developer (Node & React)',
+  'Data Scientist & AI Specialist',
+  'Cloud Solutions Architect (AWS/GCP)',
+  'DevOps & Kubernetes Engineer'
+]
+
 const MANUAL_PLACEHOLDER = `# HTML and CSS
 ## HTML Basics
 - What is HTML
@@ -14,8 +31,8 @@ const MANUAL_PLACEHOLDER = `# HTML and CSS
 - Variables
 - Functions and scope`
 
-export default function SetupForm({ profiles, selection, onProfilesChange, onSelectionChange, onStart }) {
-  const [topic, setTopic] = useState('')
+export default function SetupForm({ profiles, selection, onProfilesChange, onSelectionChange, onStart, initialTopic = '' }) {
+  const [topic, setTopic] = useState(initialTopic)
   const [mode, setMode] = useState('module')
   const [source, setSource] = useState('auto')
   const [manualText, setManualText] = useState('')
@@ -25,6 +42,7 @@ export default function SetupForm({ profiles, selection, onProfilesChange, onSel
   const [showSettings, setShowSettings] = useState(false)
 
   const isRoadmap = mode === 'roadmap'
+  const activeProfile = profiles.find((p) => p.id === selection?.profileId) || profiles[0]
 
   const submit = async (e) => {
     e.preventDefault()
@@ -60,53 +78,99 @@ export default function SetupForm({ profiles, selection, onProfilesChange, onSel
     }
   }
 
+  const handlePickPreset = (preset) => {
+    setTopic(preset)
+  }
+
   return (
     <form className="setup-card" onSubmit={submit}>
       <div className="brand">
         <span className="logo">🧠</span>
         <div>
-          <h1>Learning Agent</h1>
-          <p>{isRoadmap ? 'Tell me your goal — I\'ll design the full roadmap of courses to get you there.' : 'Tell me what you want to learn — I\'ll research it into a complete, structured learning module.'}</p>
+          <h1>Create Learning Course</h1>
+          <p>
+            {isRoadmap
+              ? 'Define your long-term goal — the AI will structure a complete sequence of learning modules.'
+              : 'Specify any subject — the AI will research it into a comprehensive curriculum with deep-dive study notes.'}
+          </p>
         </div>
       </div>
 
       <div className="field">
-        <span className="field-label">What are you building?</span>
-        <div className="mode-toggle">
-          <button type="button" className={`mode-btn ${!isRoadmap ? 'active' : ''}`} onClick={() => setMode('module')}>
-            Learning module
-          </button>
-          <button type="button" className={`mode-btn ${isRoadmap ? 'active' : ''}`} onClick={() => setMode('roadmap')}>
-            Goal roadmap
-          </button>
+        <span className="field-label">Choose Learning Mode</span>
+        <div className="mode-cards">
+          <div
+            className={`mode-card ${!isRoadmap ? 'active' : ''}`}
+            onClick={() => setMode('module')}
+          >
+            <span className="mode-card-icon">📖</span>
+            <div>
+              <div className="mode-card-title">Learning Module</div>
+              <div className="mode-card-sub">Deep dive into a single focused subject or skill</div>
+            </div>
+          </div>
+
+          <div
+            className={`mode-card ${isRoadmap ? 'active' : ''}`}
+            onClick={() => setMode('roadmap')}
+          >
+            <span className="mode-card-icon">🚀</span>
+            <div>
+              <div className="mode-card-title">Goal Roadmap</div>
+              <div className="mode-card-sub">Multi-course pathway to achieve a career or major skill goal</div>
+            </div>
+          </div>
         </div>
       </div>
 
-      <label className="field">
+      <div className="field">
         <span className="field-label">{isRoadmap ? 'What is your goal?' : 'What do you want to learn?'}</span>
         <input
           autoFocus
           value={topic}
           onChange={(e) => setTopic(e.target.value)}
-          placeholder={isRoadmap ? 'e.g. Become a frontend engineer, Get into data science, Build and launch a SaaS...' : 'e.g. Machine learning, Photography, Investing, Guitar...'}
+          placeholder={
+            isRoadmap
+              ? 'e.g. Become a frontend engineer, Learn cloud architecture, Master data science...'
+              : 'e.g. Machine learning, Guitar fundamentals, Photography, Personal finance...'
+          }
         />
-      </label>
+        
+        {/* Clickable Preset Suggestions */}
+        <div style={{ marginTop: '8px' }}>
+          <span style={{ fontSize: '12px', color: 'var(--muted)', display: 'block', marginBottom: '6px' }}>
+            💡 Quick Ideas:
+          </span>
+          <div className="topic-starters">
+            {(isRoadmap ? ROADMAP_SUGGESTIONS : MODULE_SUGGESTIONS).map((s) => (
+              <button
+                type="button"
+                key={s}
+                className="topic-chip"
+                onClick={() => handlePickPreset(s)}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
 
       <div className="field">
         <span className="field-label">How should the topics be created?</span>
         <div className="mode-toggle">
           <button type="button" className={`mode-btn ${source === 'auto' ? 'active' : ''}`} onClick={() => setSource('auto')}>
-            Auto — AI designs it
+            ✨ Auto — AI designs it
           </button>
           <button type="button" className={`mode-btn ${source === 'manual' ? 'active' : ''}`} onClick={() => setSource('manual')}>
-            Manual — I provide it
+            📝 Manual — I provide outline
           </button>
         </div>
       </div>
 
       {source === 'manual' && (
         <div className="field">
-          <span className="field-label">Your topics, subtopics, and lessons</span>
+          <span className="field-label">Your Custom Topics & Outline</span>
           <textarea
             className="manual-input"
             rows={9}
@@ -116,7 +180,7 @@ export default function SetupForm({ profiles, selection, onProfilesChange, onSel
             spellCheck={false}
           />
           <p className="hint">
-            Format: <code># Main topic</code> for each topic, <code>## Subtopic</code> underneath it, and <code>- lesson item</code> for lessons. Subtopics and lessons are optional.
+            Format: <code># Main topic</code> for each topic, <code>## Subtopic</code> underneath it, and <code>- lesson item</code> for lessons.
           </p>
           {parseError && (
             <div className="parse-error">
@@ -132,18 +196,27 @@ export default function SetupForm({ profiles, selection, onProfilesChange, onSel
       )}
 
       <div className="field">
-        <span className="field-label">Generate with</span>
+        <div className="field-label-row">
+          <span className="field-label">Generate with AI Model</span>
+          {activeProfile && (
+            <span className="active-endpoint-badge">
+              <span className="pulse-dot" />
+              {activeProfile.name} ({selection?.model})
+            </span>
+          )}
+        </div>
         <ModelSelector profiles={profiles} selection={selection} onSelectionChange={onSelectionChange} />
-        <p className="hint">Any OpenAI-compatible endpoint ({'{baseUrl}'}/chat/completions) works.</p>
+        <p className="hint">Works with any OpenAI-compatible endpoint, including local Ollama servers.</p>
       </div>
 
-      <button className="btn primary" disabled={!topic.trim() || validating} type="submit">
-        {validating ? 'Checking your topics…' : isRoadmap ? 'Build my roadmap' : 'Build my learning module'}
-      </button>
-
-      <button className="btn ghost" type="button" onClick={() => setShowSettings(true)}>
-        Manage AI endpoints
-      </button>
+      <div style={{ display: 'flex', gap: '12px', marginTop: '10px' }}>
+        <button className="btn primary" style={{ flex: 1 }} disabled={!topic.trim() || validating} type="submit">
+          {validating ? '⏳ Validating topics...' : isRoadmap ? '🚀 Build My Goal Roadmap' : '⚡ Research & Generate Module'}
+        </button>
+        <button className="btn ghost" type="button" onClick={() => setShowSettings(true)} title="Manage AI Endpoint Keys & Models">
+          ⚙ Endpoints
+        </button>
+      </div>
 
       {showSettings && (
         <SettingsModal
