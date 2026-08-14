@@ -242,6 +242,69 @@ async function callJson(opts) {
   return extractJson(text)
 }
 
+/* Parse user-provided topics/subtopics/items.
+
+   Format (markdown-style):
+     # Main topic 1
+     ## Subtopic A
+     - item 1
+     ## Subtopic B
+     - item 2
+     # Main topic 2
+     ## Subtopic C
+     - item 3
+*/
+function parseManualTopics(text) {
+  const topics = []
+  const issues = []
+  let current = null
+  let currentSub = null
+
+  const lines = String(text || '').split(/\r?\n/)
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i]
+    const line = raw.trim()
+    if (!line) continue
+
+    const head = line.match(/^(#{1,6})\s+(.+)$/)
+    if (head) {
+      const title = head[2].trim()
+      if (!title) { issues.push(`line ${i + 1}: heading is empty`); continue }
+      if (head[1].length === 1) {
+        if (!current || title !== current.title) {
+          current = { title, subtopics: [] }
+          topics.push(current)
+        }
+        currentSub = null
+      } else {
+        if (!current) { issues.push(`line ${i + 1}: subtopic "${title}" has no main topic above it`); continue }
+        if (!current.subtopics.find((s) => s.title === title)) current.subtopics.push({ title, items: [] })
+        currentSub = current.subtopics.find((s) => s.title === title)
+      }
+      continue
+    }
+
+    const item = line.match(/^[-*•]\s+(.+)$/)
+    if (item) {
+      const title = item[1].trim()
+      if (!title) { issues.push(`line ${i + 1}: item is empty`); continue }
+      if (!currentSub) { issues.push(`line ${i + 1}: item "${title}" has no subtopic above it`); continue }
+      if (!currentSub.items.includes(title)) currentSub.items.push(title)
+      continue
+    }
+
+    issues.push(`line ${i + 1}: unrecognized line "${line}" — use "# Topic", "## Subtopic", or "- item"`)
+  }
+
+  if (topics.length === 0) {
+    return { ok: false, error: 'No topics found. Use "# Main topic", "## Subtopic", and "- lesson item" lines.', issues }
+  }
+  if (issues.length > 0) {
+    return { ok: false, error: `${issues.length} problem${issues.length > 1 ? 's' : ''} in your input`, issues }
+  }
+  return { ok: true, topics }
+}
+
 /* ------------------------------------------------------------------ */
 /* Prompts                                                             */
 /* ------------------------------------------------------------------ */
@@ -435,6 +498,8 @@ function saveJob(job) {
       status: job.status,
       logs: job.logs,
       topics: job.topics,
+      source: job.source,
+      manualTopics: job.manualTopics,
       roadmapTitle: job.roadmapTitle,
       module: job.module,
       progress: job.progress,
@@ -472,7 +537,7 @@ function getJob(id) {
   return jobs.get(id) || loadJob(id)
 }
 
-function createJob(topic, config, mode = 'module') {
+function createJob(topic, config, mode = 'module', source = 'auto', manualTopics = []) {
   if (jobs.size >= MAX_JOBS) {
     const oldest = jobs.keys().next().value
     if (oldest) {
@@ -485,6 +550,8 @@ function createJob(topic, config, mode = 'module') {
     topic,
     config,
     mode,
+    source,
+    manualTopics: manualTopics || [],
     status: 'running',
     logs: [],
     topics: [],
@@ -520,8 +587,30 @@ async function runJob(job) {
       job.fatalError = null
     }
 
-    job.isOllama = await isOllamaEndpoint(job.config?.baseUrl)
+    job.isOllama = job.config?.baseUrl ? await isOllamaEndpoint(job.config.baseUrl) : false
     const expandConcurrency = job.isOllama ? 1 : 3
+
+    /* Manual source: build the module straight from the user-provided topics,
+       skipping the AI main-topics and subtopic-expansion steps. */
+    if (job.source === 'manual' && job.topics.length === 0 && job.module.mainTopics.length === 0) {
+      const mts = (job.manualTopics || [])
+        .map((t, index) => ({
+          index,
+          title: String(t.title || '').trim(),
+          subtopics: (t.subtopics || []).map((s) => ({
+            title: String(s.title || '').trim(),
+            items: (s.items || []).map(String).filter(Boolean)
+          }))
+        }))
+        .filter((t) => t.title)
+      job.module.mainTopics = mts
+      job.topics = mts.map((t) => t.title)
+      job.pending = []
+      job.progress = { done: mts.length, total: mts.length }
+      emit(job, { type: 'topics', topics: job.topics })
+      emit(job, { type: 'status', message: `Using ${mts.length} topics you provided.` })
+      emit(job, { type: 'progress', done: mts.length, total: mts.length })
+    }
 
     if (job.topics.length === 0) {
       emit(job, { type: 'status', message: 'Analyzing your topic and mapping the main topics...' })
@@ -907,11 +996,24 @@ app.post('/api/ai/chat', async (req, res) => {
 })
 
 app.post('/api/module/generate', (req, res) => {
-  const { topic, config, mode } = req.body || {}
-  if (!topic || !config) return res.status(400).json({ error: 'Missing topic or AI config' })
-  const job = createJob(topic, config, mode === 'roadmap' ? 'roadmap' : 'module')
+  const { topic, config, mode, source, manualTopics } = req.body || {}
+  if (!topic) return res.status(400).json({ error: 'Missing topic' })
+  const isManual = source === 'manual'
+  if (isManual && (!Array.isArray(manualTopics) || manualTopics.length === 0)) {
+    return res.status(400).json({ error: 'No topics provided for manual mode' })
+  }
+  const job = createJob(topic, config || { baseUrl: '', model: '' }, mode === 'roadmap' ? 'roadmap' : 'module', isManual ? 'manual' : 'auto', manualTopics)
   runJob(job)
   res.json({ id: job.id })
+})
+
+app.post('/api/module/parse-topics', (req, res) => {
+  const { text } = req.body || {}
+  const raw = String(text || '')
+  if (!raw.trim()) return res.status(400).json({ ok: false, error: 'Please paste your topics and subtopics first.' })
+  const parsed = parseManualTopics(raw)
+  if (!parsed.ok) return res.status(400).json({ ok: false, error: parsed.error, issues: parsed.issues })
+  res.json({ ok: true, topics: parsed.topics, count: parsed.topics.length })
 })
 
 app.get('/api/module/generate/:id/events', (req, res) => {

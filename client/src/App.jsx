@@ -185,7 +185,7 @@ export default function App() {
 
   /* ---------------- generation ---------------- */
 
-  const start = async (topic, mode = 'module') => {
+  const start = async (topic, mode = 'module', source = 'auto', manualTopics = null) => {
     const cfg = genConfig
     subjectRef.current = topic
     setSubject(topic)
@@ -210,7 +210,12 @@ export default function App() {
       const res = await fetch('/api/module/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic, mode, config: cfg })
+        body: JSON.stringify({
+          topic,
+          mode,
+          config: cfg,
+          ...(source === 'manual' ? { source, manualTopics } : {})
+        })
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`)

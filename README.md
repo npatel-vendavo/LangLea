@@ -72,6 +72,11 @@ An AI-powered learning module generator that acts as a learning agent. Tell it w
 - Use **Expand all** / **Collapse all** in the topics panel to open or close every main topic and subtopic at once.
 - Works alongside AI-generated modules, so you can grow a module beyond what the initial generation produced.
 
+### Bring your own topics
+- On the setup screen, choose **Manual — I provide it** instead of **Auto — AI designs it** to skip AI topic generation entirely.
+- Paste your own outline in a simple format: `# Main topic` for each course, `## Subtopic` underneath, and `- lesson item` for lessons (subtopics and items are optional).
+- The input is validated before generation — problems are reported with the exact line numbers (`# Topic` / `## Subtopic` / `- item` only), and the module is built straight from your topics with no AI calls. Works for both learning modules and goal roadmaps (which still get the Roadmap entry section).
+
 ### Goal roadmaps with progress tracking
 - Choose **Goal roadmap** mode in the setup screen (instead of **Learning module**) and enter an objective like "Become a frontend engineer".
 - The AI identifies everything you need to learn for that goal (e.g. HTML/CSS, JavaScript, React, Next.js, state management, GraphQL, testing, tooling, deployment), ordered by dependency, and creates a course for each — full modules with subtopics and lessons.
@@ -108,7 +113,8 @@ Monorepo using npm workspaces with two packages:
 | GET | `/api/logs` | List AI interaction log entries (metadata) |
 | GET | `/api/logs/:id` | Full AI interaction log entry |
 | POST | `/api/ai/discover-models` | Discover endpoint models (Ollama `/api/tags` or OpenAI-compatible `/models`) |
-| POST | `/api/module/generate` | Start a generation job (`mode: 'module'` or `'roadmap'`), returns job id |
+| POST | `/api/module/generate` | Start a generation job (`mode: 'module'`/`'roadmap'`; `source: 'auto'`/`'manual'` + `manualTopics`), returns job id |
+| POST | `/api/module/parse-topics` | Validate/paste user-provided topics; returns parsed `topics` or `issues` |
 | GET | `/api/module/generate/:id/events` | SSE stream of job progress (snapshot + live events) |
 | POST | `/api/module/:id/config` | Attach/refresh the AI config for a job |
 | POST | `/api/module/:id/resume` | Retry failed sections of a finished job |

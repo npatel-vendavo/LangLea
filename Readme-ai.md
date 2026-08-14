@@ -38,10 +38,11 @@ module = {
 | 74 | `classifyError` — retryable = 429/5xx/text heuristics |
 | 82 | `callChat` — the single AI call site: fetch, retry loop w/ backoff, **console activity logging** (`[AI:…]`), AI-log persistence. Ollama ⇒ short fixed backoff; non-Ollama ⇒ rate-limit backoff. All AI requests funnel through this. |
 | 232 / 240 | `extractJson` / `callJson` (callChat with `parseJson:true` + JSON extraction) |
-| 249–395 | Prompt builders: `mainTopicsPrompt` (module vs roadmap — roadmap returns `{title, topics[]}`), `subtopicsPrompt`, `itemsPrompt`, `deepDivePrompt`, `reviewPrompt` |
+| 257 | `parseManualTopics(text)` — parses/validates user-pasted `# Topic` / `## Subtopic` / `- item` input → `{ok, topics}` or `{ok:false, error, issues}` (used by `/api/module/parse-topics` and manual generation) |
+| 312–450 | Prompt builders: `mainTopicsPrompt` (module vs roadmap — roadmap returns `{title, topics[]}`), `subtopicsPrompt`, `itemsPrompt`, `deepDivePrompt`, `reviewPrompt` |
 | 400 | `runPool(items, limit, fn)` — concurrency pool (Ollama uses limit 1) |
 | 417–513 | Job manager: persist/load job JSON, `emit` (SSE fan-out), `createJob(topic, config, mode)` |
-| 514 | `runJob` — async generator: main-topics call → parallel subtopic expansion (retries, resume-on-failure) → roadmap-entry injection → `done` event |
+| 514 | `runJob` — async generator: if `source==='manual'` build `mainTopics` straight from `job.manualTopics` (no AI); else main-topics AI call → parallel subtopic expansion (retries, resume-on-failure) → roadmap-entry injection → `done` event |
 | 627 | `resumeJob` — retry failed sections |
 | 648–793 | Module file persistence: `slugify`, `moduleDir`, `countModuleItems` (skips Roadmap section), `generateMarkdown` (checkbox `[x]/[/]/[ ]` + progress summary), index read/write, `saveModuleRecord` (writes `module.json` + `module.md`, updates `index.json`) |
 | 786–1041 | HTTP endpoints (below) |
@@ -53,16 +54,17 @@ module = {
 | GET `/api/health` | health | 786 |
 | GET `/api/logs`, `/api/logs/:id` | AI interaction logs | 792 |
 | POST `/api/ai/discover-models` | model list: Ollama `/api/tags` or `/models`; returns `source`, `ollamaBase` | 804 |
-| GET `/api/modules` / `…/latest` / `…/:slug` / `…/:slug/raw` | list/read/download saved modules | 847–866 |
-| DELETE `/api/modules/:slug` | delete a saved module (files + index) | 875 |
-| POST `/api/modules/save` | save/update module (`.md` + `.json`) | 887 |
-| POST `/api/ai/chat` | free chat with module context | 898 |
-| POST `/api/module/generate` | start generation job (`mode:'module'\|'roadmap'`) → `{id}` | 909 |
-| GET `/api/module/generate/:id/events` | SSE: `snapshot/status/topics/progress/topicResult/done/error` | 917 |
-| POST `/api/module/:id/config`, `…/:id/resume` | attach config / retry failed | 948, 960 |
-| POST `/api/module/note` | generate a study note for an item | 970 |
-| POST `/api/module/note/review` | alternative note from a second endpoint | 985 |
-| POST `/api/ai/expand` | expand main→subtopics or subtopic→items (`kind`) | 1001 |
+| GET `/api/modules` / `…/latest` / `…/:slug` / `…/:slug/raw` | list/read/download saved modules | 947–955 |
+| DELETE `/api/modules/:slug` | delete a saved module (files + index) | 964 |
+| POST `/api/modules/save` | save/update module (`.md` + `.json`) | 976 |
+| POST `/api/ai/chat` | free chat with module context | 987 |
+| POST `/api/module/generate` | start generation job (`mode:'module'\|'roadmap'`, `source:'auto'\|'manual'` + `manualTopics[]`) → `{id}` | 998 |
+| POST `/api/module/parse-topics` | validate user-pasted topics (`#`/`##`/`-` format) → `{ok,topics}` or `{ok:false,error,issues}` | 1010 |
+| GET `/api/module/generate/:id/events` | SSE: `snapshot/status/topics/progress/topicResult/done/error` | 1019 |
+| POST `/api/module/:id/config`, `…/:id/resume` | attach config / retry failed | 1050, 1062 |
+| POST `/api/module/note` | generate a study note for an item | 1072 |
+| POST `/api/module/note/review` | alternative note from a second endpoint | 1087 |
+| POST `/api/ai/expand` | expand main→subtopics or subtopic→items (`kind`) | 1103 |
 
 `server/ai-log.js`: `initAiLog`, `logInteraction`, `listLogs`, `getLog` — one JSON file per AI call under `server/data/ai-logs/`, index capped at 500.
 
@@ -72,7 +74,7 @@ module = {
 |---|---|
 | App state machine, SSE subscription, notes/progress/manual-edit/expand handlers, selection, chat | `client/src/App.jsx` (single source of app state; phases: `dashboard`/`setup`/`generating`/`module`) |
 | Dashboard: saved-module grid, roadmap badge, Download/Delete, open | `client/src/components/Dashboard.jsx` |
-| Setup form: topic input, Learning module ↔ Goal roadmap toggle | `client/src/components/SetupForm.jsx` |
+| Setup form: topic input, Learning module ↔ Goal roadmap toggle, **Auto ↔ Manual (bring your own topics)** source selector + format-validated textarea | `client/src/components/SetupForm.jsx` |
 | Generation live view: progress bar + live topic/course tree (pending→working→done) | `client/src/components/GenerationProgress.jsx` |
 | Workspace left panel: tree, inline add, **Expand with AI**, status cycle, progress bar, Expand/Collapse all, AI-fetch highlight | `client/src/components/TopicsPanel.jsx` |
 | Center panel: note view, review-with-second-endpoint, **Roadmap overview page** | `client/src/components/ContentPanel.jsx`, `client/src/components/RoadmapView.jsx` |
