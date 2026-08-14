@@ -376,6 +376,22 @@ input:focus, textarea:focus { border-color: var(--accent); }
 .tree-head:hover, .tree-sub:hover, .tree-item:hover { background: var(--card-2); }
 .tree-head.open, .tree-sub.open { border-color: var(--border); }
 
+.tree-head.ai-fetching, .tree-sub.ai-fetching {
+  border-color: var(--accent);
+  background: rgba(124, 58, 237, 0.12);
+  animation: ai-pulse 1.2s ease-in-out infinite;
+}
+.tree-item-row.ai-fetching .tree-item {
+  border-color: var(--accent);
+  background: rgba(124, 58, 237, 0.12);
+  animation: ai-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes ai-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.35); }
+  50% { box-shadow: 0 0 0 4px rgba(124, 58, 237, 0); }
+}
+
 .tree-num {
   background: linear-gradient(135deg, var(--accent), #9b4dff);
   color: white;

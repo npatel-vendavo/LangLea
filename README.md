@@ -44,6 +44,7 @@ An AI-powered learning module generator that acts as a learning agent. Tell it w
 - Manage endpoints in the **Settings** section (open from the dashboard, the setup screen, or the module topbar): add/remove/rename endpoints, and give each endpoint a Base URL, API key, and any number of models.
 - **Ollama support**: click **Add Ollama (local)** to create an endpoint at `http://localhost:11434/v1` with no API key. It also works for an Ollama server on another machine on your network (e.g. `http://192.168.1.20:11434/v1`).
 - **Ollama base URL is forgiving**: you can enter `http://host:11434`, `http://host:11434/api`, or `http://host:11434/v1` — the app routes every request to Ollama's OpenAI-compatible `…/v1/chat/completions` endpoint automatically, and **Fetch models** corrects the saved base URL to `…/v1` when it detects Ollama.
+- **No rate limiting on Ollama**: Ollama endpoints are detected automatically and generation is serialized (one request at a time, no rate-limit backoff) so model loads and busy moments retry quickly instead of failing under concurrent requests.
 - **Fetch models** auto-discovers the model list for an endpoint — Ollama via `/api/tags`, or OpenAI-compatible via `/models` — and fills in the endpoint's models.
 - Pick which endpoint + model to use for each purpose, in the **Default endpoints** section of Settings:
   - **Generate content with** — used for building modules and study notes.
@@ -67,6 +68,8 @@ An AI-powered learning module generator that acts as a learning agent. Tell it w
 ### Manual editing and AI expansion
 - Build your own curriculum: add a **main topic** (course), a **subtopic**, or an **item** (lesson) directly from the topics panel — no regeneration needed.
 - **Expand with AI** on any main topic generates its subtopics; on any subtopic it generates its learning items. Everything merges into the existing tree (no duplicates), and you can then generate study notes for the new items.
+- The section being fetched from the AI is **highlighted with a pulsing outline** (main topic, subtopic, or lesson item), so you can watch the expansion in place.
+- Use **Expand all** / **Collapse all** in the topics panel to open or close every main topic and subtopic at once.
 - Works alongside AI-generated modules, so you can grow a module beyond what the initial generation produced.
 
 ### Goal roadmaps with progress tracking

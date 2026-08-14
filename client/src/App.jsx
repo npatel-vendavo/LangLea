@@ -716,6 +716,7 @@ export default function App() {
                   expandBusy={expandBusy}
                   expandErrors={expandErrors}
                   onCycleStatus={cycleStatus}
+                  loadingNotes={loadingNotes}
                   reveal={reveal}
                 />
               </aside>

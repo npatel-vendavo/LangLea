@@ -55,6 +55,22 @@ function buildCompletionsUrl(baseUrl) {
   return `${url}/chat/completions`
 }
 
+const ollamaCache = new Map()
+
+/* Detect whether a base URL points at an Ollama server (via /api/tags).
+   Cached per host so it only probes once. */
+async function isOllamaEndpoint(baseUrl) {
+  const host = ollamaHost(baseUrl)
+  if (ollamaCache.has(host)) return ollamaCache.get(host)
+  let ok = false
+  try {
+    const r = await fetch(`${host}/api/tags`, { signal: AbortSignal.timeout(3000) })
+    ok = r.ok
+  } catch { ok = false }
+  ollamaCache.set(host, ok)
+  return ok
+}
+
 function classifyError(status, text) {
   return (
     status === 429 ||
@@ -63,9 +79,10 @@ function classifyError(status, text) {
   )
 }
 
-async function callChat({ baseUrl, apiKey, model, messages, temperature = 0.3, maxTokens = 4000, retries = 5, onRetry, parseJson = false }) {
+async function callChat({ baseUrl, apiKey, model, messages, temperature = 0.3, maxTokens = 4000, retries = 5, onRetry, parseJson = false, isOllama: ollamaHint }) {
   if (!model) throw new Error('Missing AI model. Provide it in Settings.')
   const url = buildCompletionsUrl(baseUrl)
+  const isOllama = ollamaHint ?? (await isOllamaEndpoint(baseUrl))
   const started = Date.now()
   const entry = {
     time: new Date().toISOString(),
@@ -95,7 +112,12 @@ async function callChat({ baseUrl, apiKey, model, messages, temperature = 0.3, m
     Object.assign(entry, patch, { durationMs: Date.now() - started })
     logInteraction(entry)
   }
-  let delay = 1000
+  /* Ollama has no rate limits — use a short fixed backoff so busy moments
+     (model loading / connection drops) resolve quickly instead of long waits. */
+  let delay = isOllama ? 500 : 1000
+  const nextDelay = isOllama
+    ? () => Math.min(delay + 250, 2000)
+    : () => Math.min(delay * 2, 20000) + Math.random() * 500
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     let res
@@ -119,7 +141,7 @@ async function callChat({ baseUrl, apiKey, model, messages, temperature = 0.3, m
         onRetry?.(attempt, retries, `network error: ${e.message}`)
         logActivity('RETRY_WAIT', { attempt, delayMs: delay, reason: `network error: ${e.message}` })
         await sleep(delay)
-        delay = Math.min(delay * 2, 20000) + Math.random() * 500
+        delay = nextDelay()
         continue
       }
       const err = new Error(`Could not reach AI endpoint ${url}: ${e.message}`)
@@ -168,7 +190,7 @@ async function callChat({ baseUrl, apiKey, model, messages, temperature = 0.3, m
           onRetry?.(attempt, retries, parseErr)
           logActivity('RETRY_WAIT', { attempt, delayMs: delay, reason: parseErr })
           await sleep(delay)
-          delay = Math.min(delay * 2, 20000) + Math.random() * 500
+          delay = nextDelay()
           continue
         }
         const err = new Error(parseErr)
@@ -189,7 +211,7 @@ async function callChat({ baseUrl, apiKey, model, messages, temperature = 0.3, m
       onRetry?.(attempt, retries, `HTTP ${res.status}: ${text.slice(0, 200)}`)
       logActivity('RETRY_WAIT', { attempt, delayMs: delay, reason: `HTTP ${res.status}: ${text.slice(0, 100)}` })
       await sleep(delay)
-      delay = Math.min(delay * 2, 20000) + Math.random() * 500
+      delay = nextDelay()
       continue
     }
 
@@ -498,13 +520,17 @@ async function runJob(job) {
       job.fatalError = null
     }
 
+    job.isOllama = await isOllamaEndpoint(job.config?.baseUrl)
+    const expandConcurrency = job.isOllama ? 1 : 3
+
     if (job.topics.length === 0) {
       emit(job, { type: 'status', message: 'Analyzing your topic and mapping the main topics...' })
       try {
         const data = await callJson({
           ...job.config,
+          isOllama: job.isOllama,
           retries: 5,
-          onRetry: (a, t, why) => emit(job, { type: 'status', message: `Main topics call rate-limited — retrying (${a}/${t})… ${why}` }),
+          onRetry: (a, t, why) => emit(job, { type: 'status', message: `Retrying the topics request (${a}/${t})… ${why}` }),
           messages: [{ role: 'user', content: mainTopicsPrompt(job.topic, job.mode) }]
         })
         const topics = Array.isArray(data.topics) ? data.topics.map(String).map(s => s.trim()).filter(Boolean) : []
@@ -530,12 +556,13 @@ async function runJob(job) {
       job.pending = []
       emit(job, { type: 'status', message: `Expanding sections (round ${round}/${MAX_ROUNDS})…` })
 
-      await runPool(batch, 3, async ({ title, index }) => {
+      await runPool(batch, expandConcurrency, async ({ title, index }) => {
         try {
           const subData = await callJson({
             ...job.config,
+            isOllama: job.isOllama,
             retries: 5,
-            onRetry: (a, t, why) => emit(job, { type: 'status', message: `Rate-limited on "${title}" — retrying (${a}/${t})… ${why}` }),
+            onRetry: (a, t, why) => emit(job, { type: 'status', message: `Retrying "${title}" (${a}/${t})… ${why}` }),
             messages: [{ role: 'user', content: subtopicsPrompt(title, job.topic, job.mode) }]
           })
           const subtopics = Array.isArray(subData.subtopics) ? subData.subtopics : []
@@ -564,7 +591,7 @@ async function runJob(job) {
       if (job.pending.length > 0 && round < MAX_ROUNDS) {
         emit(job, {
           type: 'status',
-          message: `Waiting ${Math.round(ROUND_DELAY / 1000)}s for the rate limit to cool down (${job.pending.length} section${job.pending.length > 1 ? 's' : ''} still pending)…`
+          message: `Pausing ${Math.round(ROUND_DELAY / 1000)}s before retrying (${job.pending.length} section${job.pending.length > 1 ? 's' : ''} still pending)…`
         })
         await sleep(ROUND_DELAY)
       }

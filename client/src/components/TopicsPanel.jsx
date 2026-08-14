@@ -39,6 +39,7 @@ export default function TopicsPanel({
   module, notes, tracked, selectedKey, onSelect, warnings, canRetry, onRetryFailed, resuming,
   onGenerateAll, generatingAll,
   onAddMainTopic, onAddSubtopic, onAddItem, onExpandMain, onExpandSub, expandBusy, expandErrors, onCycleStatus,
+  loadingNotes,
   reveal
 }) {
   const mainTopics = [...module.mainTopics].sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
@@ -48,6 +49,16 @@ export default function TopicsPanel({
   const [addingMain, setAddingMain] = useState(false)
   const [addingSub, setAddingSub] = useState(null)
   const [addingItem, setAddingItem] = useState(null)
+
+  const expandAll = () => {
+    setExpandedMain(new Set(mainTopics.map((t) => t.title)))
+    setExpandedSub(new Set(mainTopics.flatMap((t) => (t.subtopics || []).map((s) => s.title))))
+  }
+
+  const collapseAll = () => {
+    setExpandedMain(new Set())
+    setExpandedSub(new Set())
+  }
 
   useEffect(() => {
     if (!reveal) return
@@ -113,6 +124,10 @@ export default function TopicsPanel({
         </button>
         <button className="btn tiny" onClick={() => setAddingMain((s) => !s)}>+ Topic</button>
       </div>
+      <div className="topic-actions">
+        <button className="btn tiny" onClick={expandAll}>Expand all</button>
+        <button className="btn tiny" onClick={collapseAll}>Collapse all</button>
+      </div>
 
       {addingMain && (
         <InlineAdd
@@ -125,7 +140,7 @@ export default function TopicsPanel({
       <div className="tree">
         {mainTopics.map((main, mi) => (
           <div className="tree-main" key={main.title}>
-            <button className={`tree-head ${expandedMain.has(main.title) ? 'open' : ''}`} onClick={() => toggleMain(main.title)}>
+            <button className={`tree-head ${expandedMain.has(main.title) ? 'open' : ''}${expandBusy[main.title] ? ' ai-fetching' : ''}`} onClick={() => toggleMain(main.title)}>
               <span className="chevron">{expandedMain.has(main.title) ? '▾' : '▸'}</span>
               <span className="tree-num">{mi + 1}</span>
               <span className="tree-label">{main.title}</span>
@@ -152,7 +167,7 @@ export default function TopicsPanel({
                   const subKey = `${main.title}::${sub.title}`
                   return (
                     <div key={sub.title}>
-                      <button className={`tree-sub ${expandedSub.has(sub.title) ? 'open' : ''}`} onClick={() => toggleSub(sub.title)}>
+                      <button className={`tree-sub ${expandedSub.has(sub.title) ? 'open' : ''}${expandBusy[subKey] ? ' ai-fetching' : ''}`} onClick={() => toggleSub(sub.title)}>
                         <span className="chevron">{expandedSub.has(sub.title) ? '▾' : '▸'}</span>
                         <span className="tree-label">{sub.title}</span>
                         <span className="count">{sub.items.length}</span>
@@ -174,7 +189,7 @@ export default function TopicsPanel({
                               const key = itemKey(main.title, sub.title, item)
                               const status = tracked?.[key] || 'todo'
                               return (
-                                <li key={key} className="tree-item-row" data-itemkey={key}>
+                                <li key={key} className={`tree-item-row${loadingNotes?.[key] ? ' ai-fetching' : ''}`} data-itemkey={key}>
                                   <StatusButton status={status} onClick={() => onCycleStatus(key)} />
                                   <button className={`tree-item ${key === selectedKey ? 'active' : ''}`} onClick={() => onSelect(main, sub, item)}>
                                     {notes[key] ? <span className="tree-check">✓</span> : <span className="tree-bullet">◦</span>}
