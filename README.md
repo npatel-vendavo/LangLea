@@ -91,6 +91,31 @@ An AI-powered learning module generator that acts as a learning agent. Tell it w
 ### Manage saved modules
 - Every saved module and roadmap appears on the dashboard. Use **Download .md** to export it, or **Delete** (with confirmation) to permanently remove it — both from the app storage and the server files.
 
+### Depth & Breadth presets (P0)
+- On the setup screen pick **Quick overview** (3-5 topics, 2-3 subtopics, 1-2 items), **Standard**, or **Deep dive** (10-15 topics, 6-8 subtopics, 4-6 items), or **Custom** with six sliders (min/max for topics, subtopics, items).
+- The chosen ranges are sent with the generation job and interpolated into the AI prompts, steering how much the generator produces.
+
+### Command palette (P0)
+- Press **Ctrl/Cmd+K** anywhere to open a keyboard-navigable command palette.
+- Jump to any lesson by typing its name, run actions (generate all notes, export to Markdown or Anki), toggle the Topics/Chat panels, open Settings / Logs / History / Analytics, or open any saved module.
+
+### Learning analytics (P1)
+- The **Analytics** modal (dashboard header) shows: lessons completed, days studied, study velocity (completed lessons/day), current day streak, review counts, a GitHub-style **activity heatmap** (last 17 weeks), per-module completion bars, and the most-visited lessons.
+- Activity and view counts are tracked locally: lesson status changes log `done`/`in-progress` events with timestamps, and opening a lesson records a view.
+
+### Spaced repetition & review scheduler (P1)
+- Marking a lesson **done** seeds an SM-2 review card (due tomorrow); un-checking it removes the card.
+- The dashboard shows a **Due for Review Today** section. Click a card to self-grade (Again / Hard / Good / Easy / Too easy); the SM-2 algorithm updates interval and ease and schedules the next review.
+
+### Anki export (P1)
+- The module toolbar has an **Anki** button that downloads a `.csv` (Front: lesson title; Back: note summary, key points, practice, resources; Tags: subject) — import it straight into Anki.
+
+### Chat teaching personas (P1)
+- The chat panel has a **persona** dropdown: Tutor (default), **Socratic** (asks questions), **ELI5** (plain-language analogies), **Expert peer** (no hand-holding), and **Rubber duck** (listens and reflects). The persona drives the chat system prompt.
+
+### Inline note annotation (P1)
+- Highlight any text in a study note and click **"Ask AI about this"** — the chat panel opens with your selection quoted, and the AI's answer is saved back onto the note as an **annotation** (shown under the note).
+
 ## Architecture
 
 Monorepo using npm workspaces with two packages:
@@ -102,8 +127,8 @@ Monorepo using npm workspaces with two packages:
   - Serves the built client in production.
 - `client/` — Vite + React frontend (`client/src/`)
   - `App.jsx` — app state machine, generation job subscription, persistence, chat.
-  - `components/` — `Dashboard`, `SetupForm`, `GenerationProgress`, `TopicsPanel`, `ContentPanel`, `ChatPanel`, `HistoryModal`, `SettingsModal`, `ModelSelector`, `ProfileManager`, `RoadmapView`.
-  - `lib/` — `export.js` (markdown/JSON export), `history.js` (chat history), `modules.js` (module cache), `storage.js` (endpoint profiles + per-purpose selection).
+  - `components/` — `Dashboard`, `SetupForm`, `GenerationProgress`, `TopicsPanel`, `ContentPanel`, `ChatPanel`, `HistoryModal`, `SettingsModal`, `ModelSelector`, `ProfileManager`, `RoadmapView`, `CommandPalette`, `AnalyticsModal`, `ReviewModal`, `LogsPage`.
+  - `lib/` — `export.js` (markdown/JSON/Anki export), `history.js` (chat history), `modules.js` (module cache), `storage.js` (endpoint profiles + per-purpose selection), `gen.js` (depth/breadth presets), `spaced.js` (SM-2 scheduler), `activity.js` (activity/view tracking), `personas.js` (chat teaching personas).
 
 ### API endpoints
 
@@ -152,6 +177,10 @@ npm run dev
 
 # Production: build client, serve everything from :4001
 npm start
+
+# End-to-end tests (Playwright + bundled mock AI on :5001, app on :4111)
+npx playwright install chromium
+npm run test:e2e
 ```
 
 Open the app and either pick a saved module or click **+ New topic**. In the **Settings** section, add at least one endpoint — use **Add Ollama (local)** if you run Ollama, or fill in any OpenAI-compatible Base URL, model, and API key. Set the default endpoint to **Generate content with** (or pick it in the setup screen), type the topic you want to learn, and click **Build my learning module**. Chat and review endpoints can be chosen from the workspace panels.
@@ -178,3 +207,6 @@ Client defaults (editable in the UI): a "Default" endpoint profile with base URL
 | Saved modules | `server/data/modules/<slug>/` | `module.md` + `module.json`, plus a localStorage cache |
 | AI interaction logs | `server/data/ai-logs/` | One JSON file per AI call (endpoint, model, query, output, time), plus an `index.json` |
 | Generation jobs | `JOB_DIR` temp dir | Resume-safe job state (API keys excluded) |
+| Learning activity + lesson views | Browser localStorage (`la-activity`, `la-views`) | Timestamped `done`/`in-progress` events and per-lesson view counts for the Analytics modal |
+| Spaced-repetition cards | Browser localStorage (`la-reviews`) | SM-2 review state per lesson (ease, interval, reps, next review) |
+| Chat persona | Browser localStorage (`la-persona`) | Current teaching persona (Tutor / Socratic / ELI5 / Expert peer / Rubber duck) |

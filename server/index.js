@@ -309,8 +309,27 @@ function parseManualTopics(text) {
 /* Prompts                                                             */
 /* ------------------------------------------------------------------ */
 
-function mainTopicsPrompt(topic, mode = 'module') {
+/* Generation depth/breadth presets. Each prompt interpolates these ranges
+   instead of hard-coding counts, so the SetupForm "Depth & Breadth" control
+   can steer topic/subtopic/item counts without touching the prompt text. */
+function resolveGen(gen) {
+  if (!gen || typeof gen !== 'object') return null
+  const min = (v, d) => (Number.isFinite(+v) && +v > 0 ? Math.max(1, Math.floor(+v)) : d)
+  return {
+    preset: gen.preset || 'standard',
+    topicMin: min(gen.topicMin, 7),
+    topicMax: Math.max(min(gen.topicMax, 10), min(gen.topicMin, 7)),
+    subMin: min(gen.subMin, 5),
+    subMax: Math.max(min(gen.subMax, 7), min(gen.subMin, 5)),
+    itemMin: min(gen.itemMin, 3),
+    itemMax: Math.max(min(gen.itemMax, 5), min(gen.itemMin, 3))
+  }
+}
+
+function mainTopicsPrompt(topic, mode = 'module', gen) {
   if (mode === 'roadmap') {
+    const tMin = gen?.topicMin ?? 8
+    const tMax = gen?.topicMax ?? 12
     return `You are a career and learning coach designing a step-by-step ROADMAP to achieve the goal: "${topic}".
 
 Analyze what it takes to reach this goal and identify ALL the COURSES / subject areas the learner must complete — the full set of knowledge and skills, from foundations to advanced to applied.
@@ -323,12 +342,14 @@ Return ONLY valid JSON in this exact shape (no markdown, no extra text):
 
 Requirements:
 - "title": Name the roadmap. For the goal "become a frontend engineer" use "Frontend Engineering Roadmap".
-- "topics": Include 8-12 courses. For "become a frontend engineer" this would include things like HTML/CSS, JavaScript, React, Next.js, state management, GraphQL/APIs, testing, tooling, and deployment.
+- "topics": Include ${tMin}-${tMax} courses. For "become a frontend engineer" this would include things like HTML/CSS, JavaScript, React, Next.js, state management, GraphQL/APIs, testing, tooling, and deployment.
 - Order strictly by dependency: foundations first, then intermediate, advanced, and finally applied/specialized.
 - Each course title must be descriptive and specific.
 - Courses should be mutually exclusive but collectively exhaustive for reaching the goal.`
   }
 
+  const tMin = gen?.topicMin ?? 7
+  const tMax = gen?.topicMax ?? 10
   return `You are an expert curriculum designer creating a comprehensive learning module. A student wants to master: "${topic}".
 
 Design the MAIN TOPICS (modules/chapters) for a complete, structured learning path that takes a learner from absolute beginner to confident practitioner.
@@ -339,7 +360,7 @@ Return ONLY valid JSON in this exact shape (no markdown, no extra text):
 }
 
 Requirements:
-- Include 7-10 main topics (not 6, aim for completeness)
+- Include ${tMin}-${tMax} main topics (not ${tMin - 1}, aim for completeness)
 - Order strictly from fundamentals → intermediate → advanced → specialized/applied
 - Each topic title must be descriptive and specific (e.g., not just "Variables" but "Variables, Data Types, and Type Systems")
 - Cover the full breadth: core concepts, patterns/practices, tools/ecosystem, real-world application, and emerging topics
@@ -347,7 +368,11 @@ Requirements:
 `
 }
 
-function subtopicsPrompt(mainTopic, subject, mode = 'module') {
+function subtopicsPrompt(mainTopic, subject, mode = 'module', gen) {
+  const sMin = gen?.subMin ?? 5
+  const sMax = gen?.subMax ?? 7
+  const iMin = gen?.itemMin ?? 3
+  const iMax = gen?.itemMax ?? 5
   const intro =
     mode === 'roadmap'
       ? `You are designing a course for the learning roadmap "${subject}".
@@ -367,16 +392,18 @@ Return ONLY valid JSON in this exact shape (no markdown, no extra text):
 }
 
 Requirements:
-- Create 5-7 subtopics per main topic (not just 4)
+- Create ${sMin}-${sMax} subtopics per main topic (not just ${sMin - 1})
 - Each subtopic title must be descriptive and self-contained (e.g., not "Basics" but "Fundamental Syntax and Core Constructs")
-- Provide 3-5 concrete learning items per subtopic (not just 2-4)
+- Provide ${iMin}-${iMax} concrete learning items per subtopic (not just ${iMin - 1})
 - Items must be specific, actionable, and measurable (e.g., not "Understand loops" but "Write for-loops, while-loops, and loop control statements (break/continue) with proper exit conditions")
 - Items should cover: key concepts/definitions, syntax/patterns, common pitfalls, best practices, and practical applications
 - Progress logically within the main topic: foundations → core techniques → patterns/idioms → advanced nuances → practical application
 - Avoid generic filler; every item should represent something a learner can actually practice or demonstrate`
 }
 
-function itemsPrompt(mainTopic, subtopic, subject) {
+function itemsPrompt(mainTopic, subtopic, subject, gen) {
+  const iMin = gen?.itemMin ?? 5
+  const iMax = gen?.itemMax ?? 7
   return `You are an expert curriculum designer. For the subject "${subject}", within the course/module "${mainTopic}", create the learning items (lessons/topics) for the subtopic: "${subtopic}".
 
 Return ONLY valid JSON in this exact shape (no markdown, no extra text):
@@ -385,7 +412,7 @@ Return ONLY valid JSON in this exact shape (no markdown, no extra text):
 }
 
 Requirements:
-- Provide 5-7 concrete learning items
+- Provide ${iMin}-${iMax} concrete learning items
 - Items must be specific, actionable, and measurable
 - Cover: key concepts, syntax/patterns, common pitfalls, best practices, and practical application
 - Avoid generic filler; every item should represent something a learner can actually practice or demonstrate`
@@ -500,6 +527,7 @@ function saveJob(job) {
       topics: job.topics,
       source: job.source,
       manualTopics: job.manualTopics,
+      gen: job.gen,
       roadmapTitle: job.roadmapTitle,
       module: job.module,
       progress: job.progress,
@@ -537,7 +565,7 @@ function getJob(id) {
   return jobs.get(id) || loadJob(id)
 }
 
-function createJob(topic, config, mode = 'module', source = 'auto', manualTopics = []) {
+function createJob(topic, config, mode = 'module', source = 'auto', manualTopics = [], gen) {
   if (jobs.size >= MAX_JOBS) {
     const oldest = jobs.keys().next().value
     if (oldest) {
@@ -552,6 +580,7 @@ function createJob(topic, config, mode = 'module', source = 'auto', manualTopics
     mode,
     source,
     manualTopics: manualTopics || [],
+    gen: resolveGen(gen),
     status: 'running',
     logs: [],
     topics: [],
@@ -620,7 +649,7 @@ async function runJob(job) {
           isOllama: job.isOllama,
           retries: 5,
           onRetry: (a, t, why) => emit(job, { type: 'status', message: `Retrying the topics request (${a}/${t})… ${why}` }),
-          messages: [{ role: 'user', content: mainTopicsPrompt(job.topic, job.mode) }]
+          messages: [{ role: 'user', content: mainTopicsPrompt(job.topic, job.mode, job.gen) }]
         })
         const topics = Array.isArray(data.topics) ? data.topics.map(String).map(s => s.trim()).filter(Boolean) : []
         if (topics.length === 0) throw new Error('AI returned no topics. Check your endpoint and try again.')
@@ -652,7 +681,7 @@ async function runJob(job) {
             isOllama: job.isOllama,
             retries: 5,
             onRetry: (a, t, why) => emit(job, { type: 'status', message: `Retrying "${title}" (${a}/${t})… ${why}` }),
-            messages: [{ role: 'user', content: subtopicsPrompt(title, job.topic, job.mode) }]
+            messages: [{ role: 'user', content: subtopicsPrompt(title, job.topic, job.mode, job.gen) }]
           })
           const subtopics = Array.isArray(subData.subtopics) ? subData.subtopics : []
           const cleaned = subtopics
@@ -996,13 +1025,13 @@ app.post('/api/ai/chat', async (req, res) => {
 })
 
 app.post('/api/module/generate', (req, res) => {
-  const { topic, config, mode, source, manualTopics } = req.body || {}
+  const { topic, config, mode, source, manualTopics, gen } = req.body || {}
   if (!topic) return res.status(400).json({ error: 'Missing topic' })
   const isManual = source === 'manual'
   if (isManual && (!Array.isArray(manualTopics) || manualTopics.length === 0)) {
     return res.status(400).json({ error: 'No topics provided for manual mode' })
   }
-  const job = createJob(topic, config || { baseUrl: '', model: '' }, mode === 'roadmap' ? 'roadmap' : 'module', isManual ? 'manual' : 'auto', manualTopics)
+  const job = createJob(topic, config || { baseUrl: '', model: '' }, mode === 'roadmap' ? 'roadmap' : 'module', isManual ? 'manual' : 'auto', manualTopics, gen)
   runJob(job)
   res.json({ id: job.id })
 })
@@ -1101,7 +1130,7 @@ app.post('/api/module/note/review', async (req, res) => {
 })
 
 app.post('/api/ai/expand', async (req, res) => {
-  const { kind, config, subject, mainTopic, subtopic } = req.body || {}
+  const { kind, config, subject, mainTopic, subtopic, gen } = req.body || {}
   if (!kind || !config) return res.status(400).json({ error: 'Missing kind or config' })
   try {
     if (kind === 'subtopics') {
@@ -1109,7 +1138,7 @@ app.post('/api/ai/expand', async (req, res) => {
       const data = await callJson({
         ...config,
         retries: 3,
-        messages: [{ role: 'user', content: subtopicsPrompt(mainTopic, subject || '') }]
+        messages: [{ role: 'user', content: subtopicsPrompt(mainTopic, subject || '', 'module', resolveGen(gen)) }]
       })
       const subtopics = (Array.isArray(data.subtopics) ? data.subtopics : [])
         .map((s) => ({
@@ -1123,7 +1152,7 @@ app.post('/api/ai/expand', async (req, res) => {
       const data = await callJson({
         ...config,
         retries: 3,
-        messages: [{ role: 'user', content: itemsPrompt(mainTopic, subtopic, subject || '') }]
+        messages: [{ role: 'user', content: itemsPrompt(mainTopic, subtopic, subject || '', resolveGen(gen)) }]
       })
       const items = (Array.isArray(data.items) ? data.items : []).map(String).map((x) => x.trim()).filter(Boolean)
       res.json({ items })

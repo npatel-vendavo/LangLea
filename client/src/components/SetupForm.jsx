@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import ModelSelector from './ModelSelector.jsx'
 import SettingsModal from './SettingsModal.jsx'
+import { GEN_PRESETS, GEN_LIMITS, DEFAULT_GEN, buildGen } from '../lib/gen.js'
 
 const MODULE_SUGGESTIONS = [
   'Machine Learning & Neural Networks',
@@ -40,9 +41,34 @@ export default function SetupForm({ profiles, selection, onProfilesChange, onSel
   const [parseIssues, setParseIssues] = useState([])
   const [validating, setValidating] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [gen, setGen] = useState(DEFAULT_GEN)
 
   const isRoadmap = mode === 'roadmap'
   const activeProfile = profiles.find((p) => p.id === selection?.profileId) || profiles[0]
+
+  const setGenPreset = (preset) => {
+    if (preset === 'custom') {
+      setGen({ preset: 'custom', topicMin: 7, topicMax: 10, subMin: 5, subMax: 7, itemMin: 3, itemMax: 5 })
+    } else {
+      const p = GEN_PRESETS[preset] || GEN_PRESETS.standard
+      setGen({ preset, ...p })
+    }
+  }
+
+  const clamp = (v, min, max) => Math.min(max, Math.max(min, Number(v) || min))
+  const setCustom = (field, value, limits) => {
+    const v = clamp(value, limits.min, limits.max)
+    setGen((g) => {
+      const next = { ...g, [field]: v }
+      if (field === 'topicMin' && next.topicMax < v) next.topicMax = v
+      if (field === 'topicMax' && next.topicMin > v) next.topicMin = v
+      if (field === 'subMin' && next.subMax < v) next.subMax = v
+      if (field === 'subMax' && next.subMin > v) next.subMin = v
+      if (field === 'itemMin' && next.itemMax < v) next.itemMax = v
+      if (field === 'itemMax' && next.itemMin > v) next.itemMin = v
+      return next
+    })
+  }
 
   const submit = async (e) => {
     e.preventDefault()
@@ -50,7 +76,7 @@ export default function SetupForm({ profiles, selection, onProfilesChange, onSel
     setParseError('')
     setParseIssues([])
     if (source === 'auto') {
-      onStart(topic.trim(), mode, 'auto')
+      onStart(topic.trim(), mode, 'auto', null, buildGen(gen))
       return
     }
     if (!manualText.trim()) {
@@ -70,7 +96,7 @@ export default function SetupForm({ profiles, selection, onProfilesChange, onSel
         setParseIssues(data.issues || [])
         return
       }
-      onStart(topic.trim(), mode, 'manual', data.topics)
+      onStart(topic.trim(), mode, 'manual', data.topics, buildGen(gen))
     } catch (err) {
       setParseError(`Could not reach the server: ${err.message}`)
     } finally {
@@ -194,6 +220,56 @@ export default function SetupForm({ profiles, selection, onProfilesChange, onSel
           )}
         </div>
       )}
+
+      <div className="field">
+        <span className="field-label">Depth &amp; Breadth</span>
+        <div className="preset-pills">
+          {Object.entries(GEN_PRESETS).map(([key, p]) => (
+            <button
+              key={key}
+              type="button"
+              className={`mode-btn ${gen.preset === key ? 'active' : ''}`}
+              onClick={() => setGenPreset(key)}
+              title={p.desc}
+            >
+              {p.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            className={`mode-btn ${gen.preset === 'custom' ? 'active' : ''}`}
+            onClick={() => setGenPreset('custom')}
+          >
+            Custom
+          </button>
+        </div>
+        {gen.preset !== 'custom' && <p className="hint">{GEN_PRESETS[gen.preset]?.desc}</p>}
+
+        {gen.preset === 'custom' && (
+          <div className="custom-gen">
+            {[
+              ['topicMin', 'Topics (min)', GEN_LIMITS.topic],
+              ['topicMax', 'Topics (max)', GEN_LIMITS.topic],
+              ['subMin', 'Subtopics (min)', GEN_LIMITS.sub],
+              ['subMax', 'Subtopics (max)', GEN_LIMITS.sub],
+              ['itemMin', 'Items (min)', GEN_LIMITS.item],
+              ['itemMax', 'Items (max)', GEN_LIMITS.item]
+            ].map(([field, label, limits]) => (
+              <label key={field} className="custom-gen-row">
+                <span>{label}</span>
+                <input
+                  type="range"
+                  min={limits.min}
+                  max={limits.max}
+                  value={gen[field]}
+                  onChange={(e) => setCustom(field, e.target.value, limits)}
+                />
+                <span className="custom-gen-val">{gen[field]}</span>
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="field">
         <div className="field-label-row">

@@ -59,3 +59,46 @@ export function moduleToMarkdown(module, notes, progress) {
 export function itemKey(mainTitle, subTitle, item) {
   return `${mainTitle}::${subTitle}::${item}`
 }
+
+function csvCell(text) {
+  const s = String(text ?? '')
+  const escaped = s.replace(/"/g, '""')
+  return `"${escaped}"`
+}
+
+function htmlEscape(text) {
+  return String(text ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\n/g, '<br>')
+}
+
+/* Anki CSV export. Columns: Front, Back, Tags (Anki's plain-text CSV import).
+   Front = lesson title, Back = note summary + key points + practice. */
+export function moduleToAnkiCsv(module, notes) {
+  const rows = ['Front,Back,Tags']
+  if (!module?.mainTopics) return rows.join('\n')
+  const lessonTopics = module.mainTopics.filter((t) => t.title !== 'Roadmap')
+  for (const main of lessonTopics) {
+    for (const sub of main.subtopics || []) {
+      for (const item of sub.items || []) {
+        const key = itemKey(main.title, sub.title, item)
+        const note = notes[key]
+        const backParts = []
+        if (note?.summary) backParts.push(`<p>${htmlEscape(note.summary)}</p>`)
+        if (note?.keyPoints?.length) {
+          backParts.push('<ul>' + note.keyPoints.map((k) => `<li>${htmlEscape(k)}</li>`).join('') + '</ul>')
+        }
+        if (note?.learnByDoing) backParts.push(`<p><b>Practice:</b> ${htmlEscape(note.learnByDoing)}</p>`)
+        if (note?.resources?.length) {
+          backParts.push('<ul>' + note.resources.map((r) => `<li>${htmlEscape(r)}</li>`).join('') + '</ul>')
+        }
+        const back = backParts.length ? backParts.join('') : ''
+        const tag = `${module.subject || 'langlea'}`.replace(/[^a-zA-Z0-9_:-]/g, '_')
+        rows.push(`${csvCell(`${main.title} › ${sub.title} › ${item}`)},${csvCell(back)},${csvCell(tag)}`)
+      }
+    }
+  }
+  return rows.join('\n')
+}

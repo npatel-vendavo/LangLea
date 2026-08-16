@@ -8,9 +8,14 @@ import HistoryModal from './components/HistoryModal.jsx'
 import SettingsModal from './components/SettingsModal.jsx'
 import LogsPage from './components/LogsPage.jsx'
 import Dashboard from './components/Dashboard.jsx'
-import { itemKey, moduleToMarkdown } from './lib/export.js'
+import CommandPalette from './components/CommandPalette.jsx'
+import AnalyticsModal from './components/AnalyticsModal.jsx'
+import { itemKey, moduleToMarkdown, moduleToAnkiCsv } from './lib/export.js'
 import { loadCurrentSession, startSession, appendMessage } from './lib/history.js'
-import { getLastModule, saveModule } from './lib/modules.js'
+import { getLastModule, saveModule, loadModules } from './lib/modules.js'
+import { recordActivity, recordView } from './lib/activity.js'
+import { seedReview, dropReview } from './lib/spaced.js'
+import { personaSystem } from './lib/personas.js'
 import {
   loadProfiles,
   saveProfiles,
@@ -32,6 +37,7 @@ export default function App() {
   const [topics, setTopics] = useState([])
   const [genMode, setGenMode] = useState(() => lastModule?.module?.mode ?? 'module')
   const [module, setModule] = useState(() => lastModule?.module ?? null)
+  const [genCfg, setGenCfg] = useState(null)
   const [warnings, setWarnings] = useState(() => lastModule?.warnings ?? [])
   const [fatalError, setFatalError] = useState('')
   const [resuming, setResuming] = useState(false)
@@ -52,6 +58,11 @@ export default function App() {
   const [historyOpen, setHistoryOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [logsOpen, setLogsOpen] = useState(false)
+  const [analyticsOpen, setAnalyticsOpen] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [persona, setPersona] = useState(() => localStorage.getItem('la-persona') || 'tutor')
+  const [askCtx, setAskCtx] = useState(null)
+  const [prefilledText, setPrefilledText] = useState('')
 
   const [altNote, setAltNote] = useState(null)
   const [altLoading, setAltLoading] = useState(false)
@@ -94,6 +105,23 @@ export default function App() {
   const handleGenSelection = ({ profileId, model }) => updateSelection({ profileId, model })
   const handleChatSelection = ({ profileId, model }) => updateSelection({ chatProfileId: profileId, chatModel: model })
   const handleReviewSelection = ({ profileId, model }) => updateSelection({ reviewProfileId: profileId, reviewModel: model })
+
+  const handlePersonaChange = (p) => {
+    setPersona(p)
+    try { localStorage.setItem('la-persona', p) } catch { /* ignore */ }
+  }
+
+  /* Ctrl/Cmd+K opens the command palette */
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setPaletteOpen((o) => !o)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   /* keep selections valid if a profile/model is renamed or removed */
   useEffect(() => {
@@ -185,7 +213,7 @@ export default function App() {
 
   /* ---------------- generation ---------------- */
 
-  const start = async (topic, mode = 'module', source = 'auto', manualTopics = null) => {
+  const start = async (topic, mode = 'module', source = 'auto', manualTopics = null, gen = null) => {
     const cfg = genConfig
     subjectRef.current = topic
     setSubject(topic)
@@ -199,6 +227,7 @@ export default function App() {
     setProgress({ done: 0, total: 0 })
     setTopics([])
     setGenMode(mode)
+    setGenCfg(gen || null)
     setSelected(null)
     setAltNote(null)
     setSession(ensureSession(topic))
@@ -214,6 +243,7 @@ export default function App() {
           topic,
           mode,
           config: cfg,
+          gen,
           ...(source === 'manual' ? { source, manualTopics } : {})
         })
       })
@@ -390,6 +420,7 @@ export default function App() {
     setAltError('')
     if (main.title === 'Roadmap') return
     const key = itemKey(main.title, sub.title, item)
+    recordView(key)
     if (!notes[key] && !loadingNotes[key] && !noteErrors[key]) generateNote(main, sub, item)
   }
 
@@ -526,7 +557,7 @@ export default function App() {
       const res = await fetch('/api/ai/expand', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: 'subtopics', config: genConfig, subject, mainTopic: id })
+        body: JSON.stringify({ kind: 'subtopics', config: genConfig, subject, mainTopic: id, gen: genCfg })
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Expand failed')
@@ -552,7 +583,7 @@ export default function App() {
       const res = await fetch('/api/ai/expand', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: 'items', config: genConfig, subject, mainTopic: mainTitle, subtopic: sub.title })
+        body: JSON.stringify({ kind: 'items', config: genConfig, subject, mainTopic: mainTitle, subtopic: sub.title, gen: genCfg })
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Expand failed')
@@ -572,17 +603,28 @@ export default function App() {
   }
 
   const cycleStatus = (key) => {
+    const [mainTitle, subTitle, item] = key.split('::')
     setTracked((t) => {
       const cur = t[key] || 'todo'
       const next = cur === 'todo' ? 'in-progress' : cur === 'in-progress' ? 'done' : 'todo'
-      return { ...t, [key]: next }
+      const updated = { ...t, [key]: next }
+      if (next === 'done' && cur !== 'done') {
+        seedReview({ subject, mainTitle, subTitle, item })
+        recordActivity({ subject, itemKey: key, action: 'done' })
+      } else if (cur === 'done' && next !== 'done') {
+        dropReview({ mainTitle, subTitle, item })
+      } else if (next === 'in-progress') {
+        recordActivity({ subject, itemKey: key, action: 'in-progress' })
+      }
+      return updated
     })
   }
 
   /* ---------------- chat ---------------- */
 
   const buildChatMessages = (messages) => {
-    let ctx = `You are a helpful learning tutor assisting a student who is learning "${subject}".`
+    let ctx = personaSystem(persona)
+    ctx += `\n\nYou are assisting a student who is learning "${subject}".`
     if (selected) {
       ctx += `\n\nThe student is currently studying this item: "${selected.item}" (section "${selected.sub.title}", module "${selected.main.title}").`
       const note = notes[selectedKey]
@@ -595,12 +637,24 @@ export default function App() {
     return [{ role: 'system', content: ctx }, ...messages]
   }
 
+  /* Inline note annotation: user highlighted text in a study note and asked about it.
+     Opens the chat panel, pre-quotes the selection, and saves the answer as an annotation. */
+  const askAboutSelection = (text) => {
+    if (!selected) return
+    const key = selectedKey
+    const quote = String(text || '').slice(0, 400)
+    setAskCtx({ key, quote })
+    setPrefilledText(`From my note: "${quote}"\n\nCan you explain this part more deeply?`)
+    setRightOpen(true)
+  }
+
   const sendChat = async (text) => {
     const userMsg = { role: 'user', content: text }
     const nextMessages = [...(session?.messages || []), userMsg]
     setSession(appendMessage(session, userMsg))
     setChatBusy(true)
     setChatError('')
+    setPrefilledText('')
     try {
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
@@ -610,6 +664,14 @@ export default function App() {
       const body = await res.json()
       if (!res.ok) throw new Error(body.error || `Chat failed (${res.status})`)
       setSession((s) => appendMessage(s, { role: 'assistant', content: body.content }))
+      if (askCtx && askCtx.key) {
+        const { key, quote } = askCtx
+        setAskCtx(null)
+        setNotes((n) => ({
+          ...n,
+          [key]: { ...(n[key] || {}), annotations: [...((n[key]?.annotations) || []), { quote, answer: body.content, ts: Date.now() }] }
+        }))
+      }
     } catch (e) {
       setChatError(e.message)
     } finally {
@@ -625,6 +687,10 @@ export default function App() {
 
   const exportJson = () => {
     download(JSON.stringify({ module, notes }, null, 2), 'application/json', `${slug(subject)}-module.json`)
+  }
+
+  const exportAnki = () => {
+    download(moduleToAnkiCsv(module, notes), 'text/csv', `${slug(subject)}-anki.csv`)
   }
 
   const download = (content, mime, filename) => {
@@ -653,6 +719,7 @@ export default function App() {
           onHistory={() => setHistoryOpen(true)}
           onSettings={() => setSettingsOpen(true)}
           onLogs={() => setLogsOpen(true)}
+          onAnalytics={() => setAnalyticsOpen(true)}
           onStartTopic={(t) => start(t, 'module')}
         />
       )}
@@ -704,10 +771,12 @@ export default function App() {
             </div>
 
             <div className="topbar-actions">
+              <button className="btn topbar-btn" onClick={() => setPaletteOpen(true)} title="Command palette (Ctrl/Cmd+K)">⌘K</button>
               <button className="btn topbar-btn" onClick={() => setLogsOpen(true)} title="AI interaction logs">Logs</button>
               <button className="btn topbar-btn" onClick={() => setSettingsOpen(true)} title="AI endpoints">Settings</button>
               <button className="btn topbar-btn" onClick={() => { stopStream(); setPhase('setup') }}>New topic</button>
               <button className="btn topbar-btn" onClick={exportMarkdown} title="Export module to Markdown">Export</button>
+              <button className="btn topbar-btn" onClick={exportAnki} title="Export study notes to Anki (.csv)">Anki</button>
               <button className="btn topbar-btn" onClick={() => setHistoryOpen(true)}>History</button>
               <button className="btn topbar-btn" onClick={() => setRightOpen((o) => !o)} title="Toggle chat panel">
                 Chat <span className="topbar-arrow">{rightOpen ? '›' : '‹'}</span>
@@ -767,6 +836,7 @@ export default function App() {
                 module={module}
                 tracked={tracked}
                 onOpenCourse={openCourse}
+                onAskSelection={askAboutSelection}
               />
             </main>
 
@@ -783,6 +853,9 @@ export default function App() {
                   error={chatError}
                   onNewChat={() => setSession(startSession(subject))}
                   selectedItemName={selected?.item}
+                  persona={persona}
+                  onPersonaChange={handlePersonaChange}
+                  prefilledText={prefilledText}
                 />
               </aside>
             )}
@@ -801,6 +874,29 @@ export default function App() {
         />
       )}
       {logsOpen && <LogsPage onClose={() => setLogsOpen(false)} />}
+      {analyticsOpen && <AnalyticsModal onClose={() => setAnalyticsOpen(false)} />}
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        phase={phase}
+        module={module}
+        subject={subject}
+        notes={notes}
+        tracked={tracked}
+        onSelect={handleSelect}
+        savedModules={loadModules()}
+        onOpenModule={openSaved}
+        onNewTopic={() => { stopStream(); setPhase('setup') }}
+        onExport={exportMarkdown}
+        onExportAnki={exportAnki}
+        onGenerateAll={generateAllNotes}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenLogs={() => setLogsOpen(true)}
+        onOpenHistory={() => setHistoryOpen(true)}
+        onOpenAnalytics={() => setAnalyticsOpen(true)}
+        onToggleTopics={() => setLeftOpen((o) => !o)}
+        onToggleChat={() => setRightOpen((o) => !o)}
+      />
     </div>
   )
 }

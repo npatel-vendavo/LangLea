@@ -1407,3 +1407,100 @@ input:focus, textarea:focus, select:focus {
   .content { padding: 24px 20px; }
   .mode-cards { grid-template-columns: 1fr; }
 }
+
+/* ------------------------------------------------------------------ */
+/* #16 Depth & Breadth presets                                         */
+/* ------------------------------------------------------------------ */
+.preset-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.custom-gen { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+.custom-gen-row { display: grid; grid-template-columns: 110px 1fr 36px; align-items: center; gap: 10px; font-size: 12.5px; color: var(--muted); }
+.custom-gen-row input[type='range'] { width: 100%; accent-color: var(--accent); }
+.custom-gen-val { text-align: right; font-weight: 700; color: var(--text); }
+
+/* ------------------------------------------------------------------ */
+/* #20 Command palette (Ctrl/Cmd+K)                                   */
+/* ------------------------------------------------------------------ */
+.palette-overlay { position: fixed; inset: 0; background: rgba(2,6,23,0.55); backdrop-filter: blur(2px); z-index: 200; display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh; }
+.palette { width: min(620px, 92vw); background: var(--panel); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); overflow: hidden; }
+.palette-input-row { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.palette-prompt { color: var(--accent-2); font-size: 18px; font-weight: 700; }
+.palette-input { flex: 1; border: none; background: transparent; color: var(--text); font-size: 15px; outline: none; }
+.palette-esc { font-size: 11px; color: var(--muted); border: 1px solid var(--border); padding: 2px 6px; border-radius: 6px; }
+.palette-list { max-height: 50vh; overflow-y: auto; padding: 8px 0; }
+.palette-group-label { padding: 8px 16px 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
+.palette-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 9px 16px; text-align: left; background: transparent; border: none; cursor: pointer; }
+.palette-item.active { background: rgba(99,102,241,0.14); }
+.palette-label { font-size: 14px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.palette-hint { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
+.palette-empty { padding: 20px 16px; color: var(--muted); font-size: 13px; }
+
+/* ------------------------------------------------------------------ */
+/* #6 Learning Analytics                                               */
+/* ------------------------------------------------------------------ */
+.analytics-modal { max-width: 760px; width: 92vw; }
+.analytics-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 18px; }
+.analytics-stat { display: flex; flex-direction: column; gap: 2px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+.analytics-stat-val { font-size: 22px; font-weight: 800; color: var(--accent); }
+.analytics-stat span:last-child { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.analytics-section { margin-bottom: 20px; }
+.analytics-module { margin-bottom: 10px; }
+.analytics-module-head { display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 4px; color: var(--muted); }
+.analytics-module-name { font-weight: 600; color: var(--text); }
+.heatmap { overflow-x: auto; padding-bottom: 4px; }
+.heatmap-months { display: flex; gap: 3px; margin-left: 0; font-size: 10px; color: var(--muted); height: 14px; }
+.heatmap-month-cell { width: 12px; }
+.heatmap-body { display: flex; gap: 3px; }
+.heatmap-col { display: flex; flex-direction: column; gap: 3px; }
+.heat-cell { width: 12px; height: 12px; border-radius: 3px; background: rgba(100,116,139,0.15); }
+.heat-cell.empty { background: transparent; }
+.heat-cell.l1 { background: rgba(16,185,129,0.35); }
+.heat-cell.l2 { background: rgba(16,185,129,0.55); }
+.heat-cell.l3 { background: rgba(16,185,129,0.8); }
+.heat-cell.l4 { background: rgba(16,185,129,1); }
+.analytics-views { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.analytics-views li { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; }
+.analytics-views-key { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.analytics-views-count { color: var(--accent-2); font-weight: 600; white-space: nowrap; }
+
+/* ------------------------------------------------------------------ */
+/* #1 Spaced repetition                                                */
+/* ------------------------------------------------------------------ */
+.dash-due { margin: 20px 0; padding: 16px 18px; border: 1px solid rgba(99,102,241,0.35); border-radius: 14px; background: rgba(99,102,241,0.06); }
+.dash-due-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.dash-due-head h3 { margin: 0 0 2px; font-size: 16px; }
+.dash-due-head p { margin: 0; font-size: 12.5px; color: var(--muted); }
+.dash-due-count { font-size: 18px; font-weight: 800; color: var(--accent); background: rgba(99,102,241,0.15); border-radius: 999px; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; }
+.dash-due-list { display: flex; flex-direction: column; gap: 8px; }
+.dash-due-item { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); cursor: pointer; }
+.dash-due-item:hover { border-color: var(--accent); }
+.dash-due-icon { font-size: 18px; }
+.dash-due-text { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.dash-due-title { font-size: 14px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dash-due-meta { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.review-modal { max-width: 460px; width: 92vw; }
+.review-prompt { font-size: 17px; font-weight: 700; color: var(--text); margin: 8px 0 14px; }
+.review-quality { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.review-quality .btn { display: flex; align-items: center; justify-content: space-between; width: 100%; }
+.review-q-hint { font-size: 11.5px; color: var(--muted); }
+.review-result p { font-size: 14px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+
+/* ------------------------------------------------------------------ */
+/* #13 Chat personas                                                   */
+/* ------------------------------------------------------------------ */
+.persona-row { margin-top: 8px; }
+.persona-select { width: 100%; }
+.persona-desc { font-size: 11.5px; color: var(--muted); margin: 4px 0 8px; padding: 0 2px; }
+
+/* ------------------------------------------------------------------ */
+/* #14 Inline note annotation                                          */
+/* ------------------------------------------------------------------ */
+.selectable-note { position: relative; }
+.selectable-note ::selection { background: rgba(99,102,241,0.35); }
+.ask-ai-fab { position: fixed; z-index: 120; background: var(--accent); color: #fff; font-size: 12px; font-weight: 600; padding: 7px 12px; border-radius: 999px; cursor: pointer; box-shadow: 0 6px 20px rgba(0,0,0,0.35); white-space: nowrap; transform: translateX(-50%); }
+.ask-ai-fab:hover { background: var(--accent-2); }
+.annotations { margin-top: 18px; padding-top: 12px; border-top: 1px dashed var(--border); }
+.annotation { margin-bottom: 12px; }
+.annotation-quote { margin: 0 0 6px; padding: 8px 12px; border-left: 3px solid var(--accent-2); background: rgba(6,182,212,0.07); color: var(--muted); font-style: italic; font-size: 13px; border-radius: 0 8px 8px 0; }
+.annotation-answer { margin: 0; font-size: 13.5px; color: var(--text); }
+.annotation-time { font-size: 11px; color: var(--muted); }

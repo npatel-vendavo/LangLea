@@ -1,3 +1,4 @@
+import { useRef, useState } from 'react'
 import ModelSelector from './ModelSelector.jsx'
 import RoadmapView from './RoadmapView.jsx'
 
@@ -23,6 +24,61 @@ function NoteBody({ note }) {
   )
 }
 
+function Annotations({ annotations }) {
+  if (!annotations?.length) return null
+  return (
+    <div className="annotations">
+      <h4 className="note-h">Ask-AI annotations</h4>
+      {annotations.map((a, i) => (
+        <div className="annotation" key={i}>
+          <blockquote className="annotation-quote">“{a.quote}”</blockquote>
+          <p className="annotation-answer">{a.answer}</p>
+          <span className="annotation-time">{new Date(a.ts).toLocaleString()}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function SelectableNote({ note, onAskSelection }) {
+  const [selection, setSelection] = useState(null)
+  const ref = useRef(null)
+
+  const handleMouseUp = () => {
+    const sel = window.getSelection && window.getSelection()
+    if (!sel || sel.isCollapsed) { setSelection(null); return }
+    const text = sel.toString().trim()
+    if (!text) { setSelection(null); return }
+    if (ref.current && ref.current.contains(sel.anchorNode)) {
+      const rect = sel.getRangeAt(0).getBoundingClientRect()
+      setSelection({ text, x: rect.left, y: rect.bottom })
+    } else {
+      setSelection(null)
+    }
+  }
+
+  const ask = () => {
+    if (selection) onAskSelection(selection.text)
+    setSelection(null)
+  }
+
+  return (
+    <div className="selectable-note" ref={ref} onMouseUp={handleMouseUp}>
+      <NoteBody note={note} />
+      {selection && (
+        <div
+          className="ask-ai-fab"
+          style={{ left: `${selection.x}px`, top: `${selection.y + 6}px` }}
+          onClick={ask}
+        >
+          Ask AI about this
+        </div>
+      )}
+      <Annotations annotations={note.annotations} />
+    </div>
+  )
+}
+
 export default function ContentPanel({
   subject,
   selected,
@@ -44,7 +100,8 @@ export default function ContentPanel({
   roadmapEntry,
   module,
   tracked,
-  onOpenCourse
+  onOpenCourse,
+  onAskSelection
 }) {
   return (
     <div className="content">
@@ -84,7 +141,7 @@ export default function ContentPanel({
 
           {note && !loading && (
             <div className="note">
-              <NoteBody note={note} />
+              <SelectableNote note={note} onAskSelection={onAskSelection} />
             </div>
           )}
 

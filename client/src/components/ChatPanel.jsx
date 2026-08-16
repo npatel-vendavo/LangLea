@@ -1,9 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import ModelSelector from './ModelSelector.jsx'
+import { PERSONAS } from '../lib/personas.js'
 
-export default function ChatPanel({ session, subject, profiles, chatSelection, onChatSelectionChange, onSend, busy, error, onNewChat }) {
+export default function ChatPanel({ session, subject, profiles, chatSelection, onChatSelectionChange, onSend, busy, error, onNewChat, persona, onPersonaChange, prefilledText }) {
   const [input, setInput] = useState('')
   const listRef = useRef(null)
+
+  useEffect(() => {
+    if (prefilledText) {
+      setInput((cur) => (cur ? cur : prefilledText))
+    }
+  }, [prefilledText])
 
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight
@@ -36,6 +43,21 @@ export default function ChatPanel({ session, subject, profiles, chatSelection, o
           compact
         />
       </div>
+
+      <div className="chat-selector persona-row">
+        <span className="field-label">Persona</span>
+        <select
+          className="persona-select"
+          value={persona}
+          onChange={(e) => onPersonaChange(e.target.value)}
+          title="Teaching persona"
+        >
+          {Object.entries(PERSONAS).map(([key, p]) => (
+            <option key={key} value={key}>{p.icon} {p.label}</option>
+          ))}
+        </select>
+      </div>
+      <p className="persona-desc">{PERSONAS[persona]?.desc}</p>
 
       <div className="chat-msgs" ref={listRef}>
         {(!session || session.messages.length === 0) && (

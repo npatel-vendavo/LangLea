@@ -4,3 +4,5 @@ server/data/
 *.local
 .DS_Store
 .claude
+test-results/
+playwright-report/

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { loadModules, countItems, removeModule } from '../lib/modules.js'
 import { moduleToMarkdown } from '../lib/export.js'
+import { getDueReviews } from '../lib/spaced.js'
+import ReviewModal from './ReviewModal.jsx'
 
 function downloadMarkdown(m) {
   if (m.module) {
@@ -26,11 +28,15 @@ const PRESET_TOPICS = [
   'UI/UX Design Systems'
 ]
 
-export default function Dashboard({ currentSubject, onOpen, onCreate, onHistory, onSettings, onLogs, onStartTopic }) {
+export default function Dashboard({ currentSubject, onOpen, onCreate, onHistory, onSettings, onLogs, onStartTopic, onAnalytics }) {
   const [items, setItems] = useState([])
   const [loaded, setLoaded] = useState(false)
   const [search, setSearch] = useState('')
   const [filterMode, setFilterMode] = useState('all') // 'all' | 'module' | 'roadmap'
+  const [reviewCard, setReviewCard] = useState(null)
+  const [dueReviews, setDueReviews] = useState(() => getDueReviews())
+
+  const refreshDue = () => setDueReviews(getDueReviews())
 
   const handleDelete = async (m) => {
     const label = m.mode === 'roadmap' || m.module?.mode === 'roadmap' ? 'roadmap' : 'module'
@@ -85,6 +91,7 @@ export default function Dashboard({ currentSubject, onOpen, onCreate, onHistory,
           <p>Your AI-powered knowledge hub. Explore existing modules or craft a new course.</p>
         </div>
         <div className="dash-actions">
+          <button className="btn" onClick={onAnalytics} title="View Learning Analytics">📊 Analytics</button>
           <button className="btn" onClick={onSettings} title="Manage AI Models & Endpoints">⚙ Settings</button>
           <button className="btn" onClick={onLogs} title="Inspect AI Request Logs">📋 Logs</button>
           <button className="btn" onClick={onHistory} title="View Conversation History">💬 History</button>
@@ -116,6 +123,31 @@ export default function Dashboard({ currentSubject, onOpen, onCreate, onHistory,
           </div>
         </div>
       </div>
+
+      {/* Due for Review (spaced repetition) */}
+      {dueReviews.length > 0 && (
+        <div className="dash-due">
+          <div className="dash-due-head">
+            <div>
+              <h3>Due for Review Today</h3>
+              <p>Spaced repetition picks these up so they stick. Quick 1-minute reviews.</p>
+            </div>
+            <span className="dash-due-count">{dueReviews.length}</span>
+          </div>
+          <div className="dash-due-list">
+            {dueReviews.map((card) => (
+              <button key={card.key} className="dash-due-item" onClick={() => setReviewCard(card)}>
+                <span className="dash-due-icon">🔁</span>
+                <span className="dash-due-text">
+                  <span className="dash-due-title">{card.item}</span>
+                  <span className="dash-due-meta">{card.subject} · {card.mainTitle} › {card.subTitle}</span>
+                </span>
+                <span className="btn tiny">Review</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Filter and Search Controls */}
       <div className="dash-controls">
@@ -199,6 +231,14 @@ export default function Dashboard({ currentSubject, onOpen, onCreate, onHistory,
             )
           })}
         </div>
+      )}
+
+      {reviewCard && (
+        <ReviewModal
+          card={reviewCard}
+          onClose={() => setReviewCard(null)}
+          onUpdated={refreshDue}
+        />
       )}
     </div>
   )
